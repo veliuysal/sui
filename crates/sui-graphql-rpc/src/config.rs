@@ -6,6 +6,7 @@ use crate::types::big_int::BigInt;
 use async_graphql::*;
 use fastcrypto_zkp::bn254::zk_login_api::ZkLoginEnv;
 use serde::{Deserialize, Serialize};
+use sui_types::base_types::{ObjectID, SuiAddress};
 use std::{collections::BTreeSet, fmt::Display, time::Duration};
 use sui_graphql_config::GraphQLConfig;
 use sui_json_rpc::name_service::NameServiceConfig;
@@ -53,6 +54,7 @@ pub struct ServiceConfig {
     pub(crate) name_service: NameServiceConfig,
     pub(crate) background_tasks: BackgroundTasksConfig,
     pub(crate) zklogin: ZkLoginConfig,
+    pub(crate) dot_move_service: DotMoveConfig,
 }
 
 #[GraphQLConfig]
@@ -179,6 +181,15 @@ pub struct TxExecFullNodeConfig {
 #[derive(Default)]
 pub struct ZkLoginConfig {
     pub env: ZkLoginEnv,
+}
+
+#[GraphQLConfig]
+#[derive(Default)]
+pub struct DotMoveConfig {
+    pub(crate) mainnet_api_url: Option<String>,
+    pub(crate) page_limit: u32,
+    pub(crate) package_address: SuiAddress,
+    pub(crate) registry_id: Option<ObjectID>,
 }
 
 /// The enabled features and service limits configured by the server.

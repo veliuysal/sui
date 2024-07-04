@@ -58,3 +58,4 @@ pub(crate) mod validator;
 pub(crate) mod validator_credentials;
 pub(crate) mod validator_set;
 pub(crate) mod zklogin_verify_signature;
+pub(crate) mod dot_move;

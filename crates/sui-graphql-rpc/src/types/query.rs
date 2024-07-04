@@ -22,6 +22,7 @@ use super::{
     coin_metadata::CoinMetadata,
     cursor::Page,
     digest::Digest,
+    dot_move_service::DotMoveService,
     dry_run_result::DryRunResult,
     epoch::Epoch,
     event::{self, Event, EventFilter},
@@ -50,10 +51,13 @@ impl Query {
     /// First four bytes of the network's genesis checkpoint digest (uniquely identifies the
     /// network).
     async fn chain_identifier(&self, ctx: &Context<'_>) -> Result<String> {
-        Ok(ChainIdentifier::query(ctx.data_unchecked())
+        let id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
             .await
-            .extend()?
-            .to_string())
+            .unwrap_or_default()
+            .identifier()
+            .to_string();
+
+        Ok(id)
     }
 
     /// Range of checkpoints that the RPC has data available for (for data
@@ -400,6 +404,22 @@ impl Query {
                 address: a.into(),
                 checkpoint_viewed_at: checkpoint,
             }))
+    }
+
+    /// Fetch a package by its name (using dot move service)
+    async fn package_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<String>> {
+        let id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
+            .await
+            .unwrap_or_default()
+            .identifier()
+            .to_string();
+
+        Ok(DotMoveService::query_package_by_name(ctx, name).await.extend()?)
+    }
+
+    /// Fetch a type by its name (using dot move service)
+    async fn type_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<bool>> {
+        Ok(DotMoveService::type_by_name(ctx, name).await.extend()?)
     }
 
     /// The coin metadata associated with the given coin type.

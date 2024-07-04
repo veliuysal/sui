@@ -7,14 +7,52 @@ use crate::{
 };
 use async_graphql::*;
 use diesel::{ExpressionMethods, QueryDsl};
+use once_cell::sync::OnceCell;
 use sui_indexer::schema::checkpoints;
+use sui_protocol_config::Chain;
 use sui_types::{
     digests::ChainIdentifier as NativeChainIdentifier, messages_checkpoint::CheckpointDigest,
 };
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ChainId {
+    pub(crate) identifier: NativeChainIdentifier,
+    pub(crate) chain: Chain,
+}
+
+static ACTIVE_CHAIN_ID: OnceCell<ChainId> = OnceCell::new();
+
 pub(crate) struct ChainIdentifier;
 
+impl ChainId {
+    pub(crate) fn chain(&self) -> &Chain {
+        &self.chain
+    }
+
+    pub(crate) fn identifier(&self) -> &NativeChainIdentifier {
+        &self.identifier
+    }
+}
+
 impl ChainIdentifier {
+    /// Get the chain_id. Saves in cache (once) throughout the service lifecycle.
+    /// Gets initialized from the DB if not found in cache.
+    pub(crate) async fn get_chain_id(db: &Db) -> Option<ChainId> {
+        if let Some(chain_id) = ACTIVE_CHAIN_ID.get() {
+            return Some(*chain_id);
+        };
+        let result = Self::query(db).await.ok()?;
+
+        let chain_id = ChainId {
+            identifier: result,
+            chain: result.chain(),
+        };
+
+        ACTIVE_CHAIN_ID.set(chain_id).ok()?;
+
+        Some(chain_id)
+    }
+
     /// Query the Chain Identifier from the DB.
     pub(crate) async fn query(db: &Db) -> Result<NativeChainIdentifier, Error> {
         use checkpoints::dsl;
