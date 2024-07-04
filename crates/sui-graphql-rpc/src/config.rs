@@ -1,15 +1,15 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::functional_group::FunctionalGroup;
 use crate::types::big_int::BigInt;
+use crate::{functional_group::FunctionalGroup, types::dot_move::dot_move_service::DotMoveConfig};
 use async_graphql::*;
 use fastcrypto_zkp::bn254::zk_login_api::ZkLoginEnv;
 use serde::{Deserialize, Serialize};
-use sui_types::base_types::{ObjectID, SuiAddress};
 use std::{collections::BTreeSet, fmt::Display, time::Duration};
 use sui_graphql_config::GraphQLConfig;
 use sui_json_rpc::name_service::NameServiceConfig;
+use sui_types::base_types::{ObjectID, SuiAddress};
 
 pub(crate) const RPC_TIMEOUT_ERR_SLEEP_RETRY_PERIOD: Duration = Duration::from_millis(10_000);
 pub(crate) const MAX_CONCURRENT_REQUESTS: usize = 1_000;
@@ -54,7 +54,7 @@ pub struct ServiceConfig {
     pub(crate) name_service: NameServiceConfig,
     pub(crate) background_tasks: BackgroundTasksConfig,
     pub(crate) zklogin: ZkLoginConfig,
-    pub(crate) dot_move_service: DotMoveConfig,
+    pub(crate) dot_move: DotMoveConfig,
 }
 
 #[GraphQLConfig]
@@ -181,15 +181,6 @@ pub struct TxExecFullNodeConfig {
 #[derive(Default)]
 pub struct ZkLoginConfig {
     pub env: ZkLoginEnv,
-}
-
-#[GraphQLConfig]
-#[derive(Default)]
-pub struct DotMoveConfig {
-    pub(crate) mainnet_api_url: Option<String>,
-    pub(crate) page_limit: u32,
-    pub(crate) package_address: SuiAddress,
-    pub(crate) registry_id: Option<ObjectID>,
 }
 
 /// The enabled features and service limits configured by the server.

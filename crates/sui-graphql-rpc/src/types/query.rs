@@ -9,9 +9,11 @@ use move_core_types::account_address::AccountAddress;
 use serde::de::DeserializeOwned;
 use sui_json_rpc_types::DevInspectArgs;
 use sui_sdk::SuiClient;
+use sui_types::base_types::ObjectID;
 use sui_types::transaction::{TransactionData, TransactionKind};
 use sui_types::{gas_coin::GAS, transaction::TransactionDataAPI, TypeTag};
 
+use super::dot_move::dot_move_service::DotMoveService;
 use super::suins_registration::NameService;
 use super::{
     address::Address,
@@ -22,7 +24,6 @@ use super::{
     coin_metadata::CoinMetadata,
     cursor::Page,
     digest::Digest,
-    dot_move_service::DotMoveService,
     dry_run_result::DryRunResult,
     epoch::Epoch,
     event::{self, Event, EventFilter},
@@ -407,14 +408,22 @@ impl Query {
     }
 
     /// Fetch a package by its name (using dot move service)
-    async fn package_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<String>> {
+    async fn package_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<Address>> {
+        let Watermark { checkpoint, .. } = *ctx.data()?;
         let id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
             .await
             .unwrap_or_default()
             .identifier()
             .to_string();
 
-        Ok(DotMoveService::query_package_by_name(ctx, name).await.extend()?)
+        Ok(DotMoveService::query_package_by_name(ctx, name)
+            .await
+            .extend()?
+            .and_then(|r| r.package_address)
+            .map(|a| Address {
+                address: a.into(),
+                checkpoint_viewed_at: checkpoint,
+            }))
     }
 
     /// Fetch a type by its name (using dot move service)

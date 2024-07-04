@@ -1,18 +1,67 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use async_graphql::Context;
-use move_core_types::ident_str;
+use std::str::FromStr;
+
+use async_graphql::{Context, ScalarType};
+use move_core_types::{ident_str, identifier::IdentStr, language_storage::StructTag};
 use serde::{Deserialize, Serialize};
 use sui_protocol_config::Chain;
-use sui_types::{base_types::{ObjectID, SuiAddress}, collection_types::VecMap, id::ID};
+use sui_types::{
+    base_types::{ObjectID, SuiAddress},
+    collection_types::VecMap,
+    id::ID,
+};
 
-use crate::{config::DotMoveConfig, error::Error};
+use crate::{
+    error::Error,
+    types::{base64::Base64, chain_identifier::ChainIdentifier},
+};
 
-use super::chain_identifier::{ChainId, ChainIdentifier};
+use super::dot_move_api_resolver::DotMoveExternalResolution;
 
 const DOT_MOVE_MODULE: &IdentStr = ident_str!("name");
 const DOT_MOVE_TYPE: &IdentStr = ident_str!("Name");
+const DOT_MOVE_PACKAGE: &str = "0x1a841abe817c38221596856bc975b3b84f2f68692191e9247e185213d3d02fd8";
+const DOT_MOVE_REGISTRY: &str =
+    "0x250b60446b8e7b8d9d7251600a7228dbfda84ccb4b23a56a700d833e221fae4f";
+const DEFAULT_PAGE_LIMIT: u16 = 50;
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub struct DotMoveConfig {
+    pub(crate) mainnet_api_url: Option<String>,
+    pub(crate) page_limit: u16,
+    pub(crate) package_address: SuiAddress,
+    pub(crate) registry_id: ObjectID,
+}
+
+impl DotMoveConfig {
+    pub fn new(
+        mainnet_api_url: Option<String>,
+        page_limit: u16,
+        package_address: SuiAddress,
+        registry_id: ObjectID,
+    ) -> Self {
+        Self {
+            mainnet_api_url,
+            page_limit,
+            package_address,
+            registry_id,
+        }
+    }
+}
+
+impl Default for DotMoveConfig {
+    fn default() -> Self {
+        Self {
+            mainnet_api_url: None,
+            page_limit: DEFAULT_PAGE_LIMIT,
+            package_address: SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap(),
+            registry_id: ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap(),
+        }
+    }
+}
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum DotMoveServiceError {
@@ -28,12 +77,17 @@ pub enum DotMoveServiceError {
 
     #[error("Dot Move: Mainnet API url is unavailable.")]
     MainnetApiUrlUnavailable,
+
+    #[error("Dot Move: Failed to read mainnet API response.")]
+    FailedToReadMainnetResponse,
+
+    #[error("Dot Move: Failed to parse mainnet API response.")]
+    FailedToParseMainnetResponse,
 }
 
 pub(crate) struct DotMoveService;
 
 impl DotMoveService {
-
     async fn is_mainnet(ctx: &Context<'_>) -> Result<bool, Error> {
         Ok(ChainIdentifier::get_chain_id(ctx.data_unchecked())
             .await
@@ -46,15 +100,22 @@ impl DotMoveService {
     pub(crate) async fn query_package_by_name(
         ctx: &Context<'_>,
         name: String,
-    ) -> Result<Option<String>, Error> {
-        Ok(Some(name))
+    ) -> Result<Option<AppInfo>, Error> {
+        let name =
+            DotMoveExternalResolution::query_from_mainnet(ctx.data_unchecked(), name.clone())
+                .await?;
+
+        if name.is_some() {
+            Ok(name.unwrap().app_info)
+        } else {
+            Ok(None)
+        }
     }
 
     pub(crate) async fn type_by_name(
         ctx: &Context<'_>,
         name: String,
     ) -> Result<Option<bool>, Error> {
-
         let is_mainnet = Self::is_mainnet(ctx).await?;
 
         // Err(Error::DotMove(DotMoveServiceError::ChainIdentifierUnavailable))
@@ -63,11 +124,10 @@ impl DotMoveService {
     }
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Name {
-    labels: Vec<String>,
-    normalized: String
+    pub labels: Vec<String>,
+    pub normalized: String,
 }
 
 impl Name {
@@ -80,14 +140,21 @@ impl Name {
         }
     }
 
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bcs::to_bytes(&self).unwrap()
+    }
+
+    pub fn to_base64_string(&self) -> String {
+        Base64::from(self.to_bytes()).to_value().to_string()
+    }
+
     pub fn to_dynamic_field_id(&self, config: &DotMoveConfig) -> ObjectID {
         let domain_type_tag = Self::type_(config.package_address);
-        let domain_bytes = bcs::to_bytes(&self).unwrap();
 
         sui_types::dynamic_field::derive_dynamic_field_id(
-            self.registry_id,
-            &TypeTag::Struct(Box::new(domain_type_tag)),
-            &domain_bytes,
+            config.registry_id,
+            &sui_types::TypeTag::Struct(Box::new(domain_type_tag)),
+            &self.to_bytes(),
         )
         .unwrap()
     }
@@ -107,5 +174,5 @@ pub struct AppRecord {
 pub struct AppInfo {
     pub package_info_id: Option<ID>,
     pub package_address: Option<SuiAddress>,
-    pub upgrade_cap_id: Option<ID>
+    pub upgrade_cap_id: Option<ID>,
 }
