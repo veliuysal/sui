@@ -41,11 +41,12 @@ impl ChainIdentifier {
         if let Some(chain_id) = ACTIVE_CHAIN_ID.get() {
             return Some(*chain_id);
         };
-        let result = Self::query(db).await.ok()?;
+
+        let queried_id = Self::query(db).await.ok()?;
 
         let chain_id = ChainId {
-            identifier: result,
-            chain: result.chain(),
+            identifier: queried_id,
+            chain: queried_id.chain(),
         };
 
         ACTIVE_CHAIN_ID.set(chain_id).ok()?;
@@ -54,7 +55,7 @@ impl ChainIdentifier {
     }
 
     /// Query the Chain Identifier from the DB.
-    pub(crate) async fn query(db: &Db) -> Result<NativeChainIdentifier, Error> {
+    async fn query(db: &Db) -> Result<NativeChainIdentifier, Error> {
         use checkpoints::dsl;
 
         let digest_bytes = db

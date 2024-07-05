@@ -31,13 +31,16 @@ const DEFAULT_PAGE_LIMIT: u16 = 50;
 #[serde(rename_all = "kebab-case")]
 pub struct DotMoveConfig {
     pub(crate) mainnet_api_url: Option<String>,
+    #[serde(default = "default_page_limit")]
     pub(crate) page_limit: u16,
+    #[serde(default = "default_package_address")]
     pub(crate) package_address: SuiAddress,
+    #[serde(default = "default_registry_id")]
     pub(crate) registry_id: ObjectID,
 }
 
 impl DotMoveConfig {
-    pub fn new(
+    pub(crate) fn new(
         mainnet_api_url: Option<String>,
         page_limit: u16,
         package_address: SuiAddress,
@@ -52,39 +55,45 @@ impl DotMoveConfig {
     }
 }
 
+fn default_package_address() -> SuiAddress {
+    SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap()
+}
+
+fn default_registry_id() -> ObjectID {
+    ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap()
+}
+
+fn default_page_limit() -> u16 {
+    DEFAULT_PAGE_LIMIT
+}
+
 impl Default for DotMoveConfig {
     fn default() -> Self {
-        Self {
-            mainnet_api_url: None,
-            page_limit: DEFAULT_PAGE_LIMIT,
-            package_address: SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap(),
-            registry_id: ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap(),
-        }
+        Self::new(
+            None,
+            DEFAULT_PAGE_LIMIT,
+            default_package_address(),
+            default_registry_id(),
+        )
     }
 }
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum DotMoveServiceError {
     // The chain identifier is not available, so we cannot determine where to look for the name.
-    #[error("Dot Move: Cannot determine which chain to query.")]
+    #[error("Dot Move: Cannot determine which chain to query due to an internal error.")]
     ChainIdentifierUnavailable,
-    // The name was not found in the DotMove service.
-    #[error("Dot Move: The requested name {0} was not found.")]
-    NameNotFound(String),
     // The name was found in the DotMove service, but it is not a valid name.
     #[error("Dot Move: The request name {0} is malformed.")]
     InvalidName(String),
 
-    #[error("Dot Move: Mainnet API url is unavailable.")]
+    #[error("Dot Move: Mainnet API url is not available so resolution is not on this RPC.")]
     MainnetApiUrlUnavailable,
 
-    #[error("Dot Move: Failed to query mainnet API.")]
+    #[error("Dot Move Internal Error: Failed to query mainnet API due to an internal error.")]
     FailedToQueryMainnetApi,
 
-    #[error("Dot Move: Failed to read mainnet API response.")]
-    FailedToReadMainnetResponse,
-
-    #[error("Dot Move: Failed to parse mainnet API response.")]
+    #[error("Dot Move Internal Error: Failed to parse mainnet's API response.")]
     FailedToParseMainnetResponse,
 }
 
@@ -105,15 +114,16 @@ impl DotMoveService {
         ctx: &Context<'_>,
         name: String,
     ) -> Result<Option<AppInfo>, Error> {
-        let DotMoveDataLoader(loader) = &ctx.data_unchecked();
+        // let chain_id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
+        //     .await
+        //     .ok_or(DotMoveServiceError::ChainIdentifierUnavailable)?;
 
-        let chain_name = Name::from_str(&name)?;
-
-        let Some(result) = loader.load_one(chain_name).await.ok() else {
-            return Ok(None);
-        };
-
-        Ok(result.map_or(None, |x| x.app_info))
+        // Non-mainnet handling for name resolution (uses mainnet api to resolve names).
+        // if chain_id.identifier().chain() != Chain::Mainnet {
+        Self::query_package_by_name_non_mainnet(ctx, &name).await
+        // } else {
+            // Ok(None)
+        // }
     }
 
     pub(crate) async fn type_by_name(
@@ -124,10 +134,31 @@ impl DotMoveService {
 
         Ok(Some(is_mainnet))
     }
+
+    async fn query_package_by_name_non_mainnet(
+        ctx: &Context<'_>,
+        name: &str,
+    ) -> Result<Option<AppInfo>, Error> {
+        let DotMoveDataLoader(loader) = &ctx.data_unchecked();
+
+        let chain_name = Name::from_str(&name)?;
+
+        let Some(result) = loader.load_one(chain_name).await.ok() else {
+            return Ok(None);
+        };
+
+        Ok(result.map_or(None, |x| x.app_info))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub(crate) struct VersionedName {
+    pub version: u64,
+    pub name: Name,
 }
 
 #[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq)]
-pub struct Name {
+pub(crate) struct Name {
     pub labels: Vec<String>,
     pub normalized: String,
 }
@@ -178,7 +209,7 @@ impl FromStr for Name {
 
 /// An AppRecord entry in the DotMove service.
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub struct AppRecord {
+pub(crate) struct AppRecord {
     pub id: ObjectID,
     pub app_cap_id: ID,
     pub app_info: Option<AppInfo>,
@@ -187,7 +218,7 @@ pub struct AppRecord {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub struct AppInfo {
+pub(crate) struct AppInfo {
     pub package_info_id: Option<ID>,
     pub package_address: Option<SuiAddress>,
     pub upgrade_cap_id: Option<ID>,

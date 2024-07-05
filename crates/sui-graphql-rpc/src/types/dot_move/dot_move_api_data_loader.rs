@@ -81,7 +81,9 @@ impl Loader<Name> for MainnetNamesLoader {
     /// a successful one.
     async fn load(&self, keys: &[Name]) -> Result<HashMap<Name, AppRecord>, Error> {
         if self.config.mainnet_api_url.is_none() {
-            return Err(Error::DotMove(DotMoveServiceError::MainnetApiUrlUnavailable));
+            return Err(Error::DotMove(
+                DotMoveServiceError::MainnetApiUrlUnavailable,
+            ));
         };
 
         let mut results: HashMap<Name, AppRecord> = HashMap::new();
@@ -107,7 +109,7 @@ impl Loader<Name> for MainnetNamesLoader {
         let response_json: GraphQLResponse<Owner> = res
             .json()
             .await
-            .map_err(|_| Error::DotMove(DotMoveServiceError::FailedToReadMainnetResponse))?;
+            .map_err(|_| Error::DotMove(DotMoveServiceError::FailedToParseMainnetResponse))?;
 
         let names = response_json.data.owner.names;
 
@@ -146,8 +148,7 @@ impl DotMoveDataLoader {
     }
 }
 
-// GraphQL Request and Response types
-// for querying the names on the mainnet graphql endpoint.
+// GraphQL Request and Response types to deserialize.
 #[derive(Serialize)]
 struct GraphQLRequest {
     query: String,
