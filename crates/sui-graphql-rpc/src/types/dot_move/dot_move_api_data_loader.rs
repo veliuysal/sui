@@ -1,3 +1,6 @@
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use async_graphql::dataloader::{DataLoader, Loader};
@@ -7,6 +10,7 @@ use crate::{error::Error, types::base64::Base64};
 
 use super::dot_move_service::{AppRecord, DotMoveConfig, DotMoveServiceError, Name};
 
+/// GraphQL fragment to query the values of the dynamic fields.
 const QUERY_FRAGMENT: &str =
     "fragment RECORD_VALUES on DynamicField { value { ... on MoveValue { bcs } } }";
 
@@ -31,8 +35,7 @@ impl MainnetNamesLoader {
     ) -> Result<String, Error> {
         let mut result = format!(r#"{{ owner(address: "{}") {{"#, self.config.registry_id);
 
-        // we create the GraphQL query keys with a `fetch_{id}` prefix, which is accepted on graphql fields
-        // querying.
+        // we create the GraphQL query keys with a `fetch_{id}` prefix, which is accepted on graphql fields.
         for (index, name) in names.iter().enumerate() {
             let bcs_base64 = name.to_base64_string();
 
@@ -101,7 +104,7 @@ impl Loader<Name> for MainnetNamesLoader {
             mapping.keys().for_each(|k| {
                 let idx = mapping.get(k).unwrap();
 
-                let Some(bcs) = names.get(&format!("fetch_{}", idx)) else {
+                let Some(Some(bcs)) = names.get(&format!("fetch_{}", idx)) else {
                     return;
                 };
 
@@ -155,7 +158,7 @@ struct Owner {
 #[derive(Deserialize, Debug)]
 struct Names {
     #[serde(flatten)]
-    names: HashMap<String, OwnerValue>,
+    names: HashMap<String, Option<OwnerValue>>,
 }
 
 #[derive(Deserialize, Debug)]

@@ -106,15 +106,11 @@ impl DotMoveService {
 
         let chain_name = Name::from_str(&name)?;
 
-        let Some(name) = loader
-            .load_one(chain_name)
-            .await
-            .map_err(|_| Error::DotMove(DotMoveServiceError::NameNotFound(name.clone())))?
-        else {
+        let Some(result) = loader.load_one(chain_name).await.ok() else {
             return Ok(None);
         };
 
-        Ok(name.app_info)
+        Ok(result.map_or(None, |x| x.app_info))
     }
 
     pub(crate) async fn type_by_name(
