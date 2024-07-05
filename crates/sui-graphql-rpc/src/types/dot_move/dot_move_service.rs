@@ -18,7 +18,7 @@ use crate::{
     types::{base64::Base64, chain_identifier::ChainIdentifier},
 };
 
-use super::dot_move_api_data_loader::{DotMoveDataLoader, MainnetNamesLoader};
+use super::dot_move_api_data_loader::DotMoveDataLoader;
 
 const DOT_MOVE_MODULE: &IdentStr = ident_str!("name");
 const DOT_MOVE_TYPE: &IdentStr = ident_str!("Name");
@@ -77,6 +77,9 @@ pub enum DotMoveServiceError {
 
     #[error("Dot Move: Mainnet API url is unavailable.")]
     MainnetApiUrlUnavailable,
+
+    #[error("Dot Move: Failed to query mainnet API.")]
+    FailedToQueryMainnetApi,
 
     #[error("Dot Move: Failed to read mainnet API response.")]
     FailedToReadMainnetResponse,

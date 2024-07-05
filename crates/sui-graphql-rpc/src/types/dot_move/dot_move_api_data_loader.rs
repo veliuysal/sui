@@ -75,7 +75,15 @@ impl Loader<Name> for MainnetNamesLoader {
     type Value = AppRecord;
     type Error = Error;
 
+    /// This function queries the mainnet API to fetch the app records for the requested names.
+    /// This is part of the data loader, so all queries are bulked-up to the maximum of {config.page_limit}.
+    /// We handle the cases where individual queries fail, to ensure that a failed query cannot affect
+    /// a successful one.
     async fn load(&self, keys: &[Name]) -> Result<HashMap<Name, AppRecord>, Error> {
+        if self.config.mainnet_api_url.is_none() {
+            return Err(Error::DotMove(DotMoveServiceError::MainnetApiUrlUnavailable));
+        };
+
         let mut results: HashMap<Name, AppRecord> = HashMap::new();
         let mut mapping: HashMap<Name, usize> = HashMap::new();
 
@@ -90,37 +98,37 @@ impl Loader<Name> for MainnetNamesLoader {
             .json(&request_body)
             .send()
             .await
+            .map_err(|_| Error::DotMove(DotMoveServiceError::FailedToQueryMainnetApi))?;
+
+        if !res.status().is_success() {
+            return Err(Error::DotMove(DotMoveServiceError::FailedToQueryMainnetApi));
+        }
+
+        let response_json: GraphQLResponse<Owner> = res
+            .json()
+            .await
             .map_err(|_| Error::DotMove(DotMoveServiceError::FailedToReadMainnetResponse))?;
 
-        // Check if the response status is success
-        if res.status().is_success() {
-            let response_json: GraphQLResponse<Owner> = res
-                .json()
-                .await
-                .map_err(|_| Error::DotMove(DotMoveServiceError::FailedToReadMainnetResponse))?;
+        let names = response_json.data.owner.names;
 
-            let names = response_json.data.owner.names;
+        mapping.keys().for_each(|k| {
+            let idx = mapping.get(k).unwrap();
 
-            mapping.keys().for_each(|k| {
-                let idx = mapping.get(k).unwrap();
+            let Some(Some(bcs)) = names.get(&format!("fetch_{}", idx)) else {
+                return;
+            };
 
-                let Some(Some(bcs)) = names.get(&format!("fetch_{}", idx)) else {
-                    return;
-                };
+            let Some(bytes) = Base64::from_str(&bcs.value.bcs).ok() else {
+                return;
+            };
 
-                let Some(bytes) = Base64::from_str(&bcs.value.bcs).ok() else {
-                    return;
-                };
+            let Some(app_record) = bcs::from_bytes::<AppRecord>(&bytes.0).ok() else {
+                return;
+            };
 
-                let Some(app_record) = bcs::from_bytes::<AppRecord>(&bytes.0).ok() else {
-                    return;
-                };
-
-                results.insert(k.clone(), app_record);
-            });
-        } else {
-            println!("GraphQL request failed: {}", res.status());
-        }
+            // only insert the record if it is a valid `app_record`
+            results.insert(k.clone(), app_record);
+        });
 
         Ok(results)
     }
