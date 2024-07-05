@@ -18,7 +18,7 @@ use crate::{
     types::{base64::Base64, chain_identifier::ChainIdentifier},
 };
 
-use super::dot_move_api_resolver::DotMoveExternalResolution;
+use super::dot_move_api_data_loader::{DotMoveDataLoader, MainnetNamesLoader};
 
 const DOT_MOVE_MODULE: &IdentStr = ident_str!("name");
 const DOT_MOVE_TYPE: &IdentStr = ident_str!("Name");
@@ -88,43 +88,46 @@ pub enum DotMoveServiceError {
 pub(crate) struct DotMoveService;
 
 impl DotMoveService {
-    async fn is_mainnet(ctx: &Context<'_>) -> Result<bool, Error> {
-        Ok(ChainIdentifier::get_chain_id(ctx.data_unchecked())
+    // Check if the active chain is mainnet.
+    async fn is_mainnet(ctx: &Context<'_>) -> bool {
+        ChainIdentifier::get_chain_id(ctx.data_unchecked())
             .await
             .unwrap_or_default()
             .identifier()
             .chain()
-            == Chain::Mainnet)
+            == Chain::Mainnet
     }
 
     pub(crate) async fn query_package_by_name(
         ctx: &Context<'_>,
         name: String,
     ) -> Result<Option<AppInfo>, Error> {
-        let name =
-            DotMoveExternalResolution::query_from_mainnet(ctx.data_unchecked(), name.clone())
-                .await?;
+        let DotMoveDataLoader(loader) = &ctx.data_unchecked();
 
-        if name.is_some() {
-            Ok(name.unwrap().app_info)
-        } else {
-            Ok(None)
-        }
+        let chain_name = Name::from_str(&name)?;
+
+        let Some(name) = loader
+            .load_one(chain_name)
+            .await
+            .map_err(|_| Error::DotMove(DotMoveServiceError::NameNotFound(name.clone())))?
+        else {
+            return Ok(None);
+        };
+
+        Ok(name.app_info)
     }
 
     pub(crate) async fn type_by_name(
         ctx: &Context<'_>,
         name: String,
     ) -> Result<Option<bool>, Error> {
-        let is_mainnet = Self::is_mainnet(ctx).await?;
-
-        // Err(Error::DotMove(DotMoveServiceError::ChainIdentifierUnavailable))
+        let is_mainnet = Self::is_mainnet(ctx).await;
 
         Ok(Some(is_mainnet))
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq)]
 pub struct Name {
     pub labels: Vec<String>,
     pub normalized: String,
@@ -157,6 +160,20 @@ impl Name {
             &self.to_bytes(),
         )
         .unwrap()
+    }
+}
+
+impl FromStr for Name {
+    type Err = DotMoveServiceError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let labels = s.split('@').rev().map(|x| x.to_string()).collect();
+        // TODO: Add validation on labels etc.
+
+        Ok(Self {
+            labels,
+            normalized: s.to_string(),
+        })
     }
 }
 

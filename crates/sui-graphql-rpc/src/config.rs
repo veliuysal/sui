@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fmt::Display, time::Duration};
 use sui_graphql_config::GraphQLConfig;
 use sui_json_rpc::name_service::NameServiceConfig;
-use sui_types::base_types::{ObjectID, SuiAddress};
 
 pub(crate) const RPC_TIMEOUT_ERR_SLEEP_RETRY_PERIOD: Duration = Duration::from_millis(10_000);
 pub(crate) const MAX_CONCURRENT_REQUESTS: usize = 1_000;

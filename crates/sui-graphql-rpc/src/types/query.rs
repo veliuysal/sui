@@ -428,7 +428,7 @@ impl Query {
 
     /// Fetch a type by its name (using dot move service)
     async fn type_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<bool>> {
-        Ok(DotMoveService::type_by_name(ctx, name).await.extend()?)
+        DotMoveService::type_by_name(ctx, name).await.extend()
     }
 
     /// The coin metadata associated with the given coin type.

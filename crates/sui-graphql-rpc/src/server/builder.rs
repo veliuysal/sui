@@ -14,6 +14,7 @@ use crate::data::{DataLoader, Db};
 use crate::metrics::Metrics;
 use crate::mutation::Mutation;
 use crate::types::datatype::IMoveDatatype;
+use crate::types::dot_move::dot_move_api_data_loader::DotMoveDataLoader;
 use crate::types::move_object::IMoveObject;
 use crate::types::object::IObject;
 use crate::types::owner::IOwner;
@@ -468,7 +469,8 @@ impl ServerBuilder {
             .context_data(zklogin_config)
             .context_data(metrics.clone())
             .context_data(config.clone())
-            .context_data(dot_move_config);
+            .context_data(dot_move_config.clone())
+            .context_data(DotMoveDataLoader::new(&dot_move_config));
 
         if config.internal_features.feature_gate {
             builder = builder.extension(FeatureGate);
