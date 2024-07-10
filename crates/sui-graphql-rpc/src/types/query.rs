@@ -12,8 +12,8 @@ use sui_sdk::SuiClient;
 use sui_types::transaction::{TransactionData, TransactionKind};
 use sui_types::{gas_coin::GAS, transaction::TransactionDataAPI, TypeTag};
 
-use super::move_package::{self, MovePackage};
 use super::dot_move::dot_move_service::DotMoveService;
+use super::move_package::{self, MovePackage};
 use super::suins_registration::NameService;
 use super::{
     address::Address,
@@ -505,13 +505,8 @@ impl Query {
     /// Fetch a package by its name (using dot move service)
     async fn package_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<Address>> {
         let Watermark { checkpoint, .. } = *ctx.data()?;
-        let id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
-            .await
-            .unwrap_or_default()
-            .identifier()
-            .to_string();
 
-        Ok(DotMoveService::query_package_by_name(ctx, name)
+        Ok(DotMoveService::query_package_by_name(ctx, name, checkpoint)
             .await
             .extend()?
             .and_then(|r| r.package_address)

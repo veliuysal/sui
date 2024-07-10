@@ -8,14 +8,14 @@ use move_core_types::{ident_str, identifier::IdentStr, language_storage::StructT
 use serde::{Deserialize, Serialize};
 use sui_protocol_config::Chain;
 use sui_types::{
-    base_types::{ObjectID, SuiAddress},
-    collection_types::VecMap,
-    id::ID,
+    base_types::{ObjectID, SuiAddress}, collection_types::VecMap, dynamic_field::Field, id::ID, object::MoveObject as NativeMoveObject
 };
 
 use crate::{
     error::Error,
-    types::{base64::Base64, chain_identifier::ChainIdentifier},
+    types::{
+        base64::Base64, chain_identifier::ChainIdentifier, move_object::MoveObject, move_package::{MovePackage, PackageLookup}, object::Object
+    },
 };
 
 use super::dot_move_api_data_loader::DotMoveDataLoader;
@@ -95,6 +95,9 @@ pub enum DotMoveServiceError {
 
     #[error("Dot Move Internal Error: Failed to parse mainnet's API response.")]
     FailedToParseMainnetResponse,
+
+    #[error("Dot Move Internal Error: Failed to deserialize DotMove record ${0}.")]
+    FailedToDeserializeDotMoveRecord(ObjectID),
 }
 
 pub(crate) struct DotMoveService;
@@ -113,17 +116,20 @@ impl DotMoveService {
     pub(crate) async fn query_package_by_name(
         ctx: &Context<'_>,
         name: String,
+        checkpoint_viewed_at: u64,
     ) -> Result<Option<AppInfo>, Error> {
-        // let chain_id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
-        //     .await
-        //     .ok_or(DotMoveServiceError::ChainIdentifierUnavailable)?;
+        let chain_id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
+            .await
+            .unwrap_or_default();
+            // .ok_or(DotMoveServiceError::ChainIdentifierUnavailable)?;
 
         // Non-mainnet handling for name resolution (uses mainnet api to resolve names).
-        // if chain_id.identifier().chain() != Chain::Mainnet {
-        Self::query_package_by_name_non_mainnet(ctx, &name).await
-        // } else {
-        // Ok(None)
-        // }
+        if chain_id.identifier().chain() != Chain::Mainnet {
+            Self::query_package_by_name_non_mainnet(ctx, &name).await
+        } else {
+            Self::query_package_by_name_mainnet(ctx, &name, checkpoint_viewed_at).await?;
+            Ok(None)
+        }
     }
 
     pub(crate) async fn type_by_name(
@@ -142,27 +148,67 @@ impl DotMoveService {
         let DotMoveDataLoader(loader) = &ctx.data_unchecked();
 
         let chain_name = Name::from_str(&name)?;
-
-        let Some(result) = loader.load_one(chain_name).await.ok() else {
+        let Some(result) = loader.load_one(chain_name).await? else {
             return Ok(None);
         };
 
-        Ok(result.map_or(None, |x| x.app_info))
+        // TODO: Use this AppRecord to query the package...
+
+        Ok(result.app_info)
     }
 
     async fn query_package_by_name_mainnet(
         ctx: &Context<'_>,
         name: &str,
+        checkpoint_viewed_at: u64,
     ) -> Result<Option<AppInfo>, Error> {
         let config: &DotMoveConfig = ctx.data_unchecked();
-        let chain_name = Name::from_str(&name)?;
-        let object_id = chain_name.to_dynamic_field_id(config);
+        let versioned = VersionedName::from_str(&name)?;
+
+        let Some(df) = MoveObject::query(
+            ctx,
+            versioned.name.to_dynamic_field_id(config).into(),
+            Object::latest_at(checkpoint_viewed_at),
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+
+        let app_record = AppRecord::try_from(df.native)?;
+
+        let Some(app_info) = app_record.app_info else {
+            return Ok(None);
+        };
+
+        // TODO: Decide if this is an error or just an option return.
+        let Some(package_address) = app_info.package_address else {
+            return Ok(None);
+        };
+
+        // let's now find the package at a specified version (or latest)
+        let Some(package_at_version) = MovePackage::query(
+            ctx,
+            package_address.into(),
+            if versioned.version.is_some() {
+                MovePackage::by_version(versioned.version.unwrap(), checkpoint_viewed_at)
+            } else {
+                MovePackage::latest_at(checkpoint_viewed_at)
+            },
+        ).await? else {
+            return Ok(None);
+        };
+
+        let _id = package_at_version.native.id();
+
+        Ok(None)
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub(crate) struct VersionedName {
-    pub version: u64,
+    /// A version name defaults at None, which means we need the latest version.
+    pub version: Option<u64>,
     pub name: Name,
 }
 
@@ -216,6 +262,18 @@ impl FromStr for Name {
     }
 }
 
+impl FromStr for VersionedName {
+    type Err = DotMoveServiceError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // TODO: Parse version
+        Ok(Self {
+            version: None,
+            name: Name::from_str(s)?,
+        })
+    }
+}
+
 /// An AppRecord entry in the DotMove service.
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub(crate) struct AppRecord {
@@ -231,4 +289,15 @@ pub(crate) struct AppInfo {
     pub package_info_id: Option<ID>,
     pub package_address: Option<SuiAddress>,
     pub upgrade_cap_id: Option<ID>,
+}
+
+impl TryFrom<NativeMoveObject> for AppRecord {
+    type Error = DotMoveServiceError;
+
+    fn try_from(object: NativeMoveObject) -> Result<Self, DotMoveServiceError> {
+        object
+            .to_rust::<Field<Name, Self>>()
+            .map(|record| record.value)
+            .ok_or_else(|| DotMoveServiceError::FailedToDeserializeDotMoveRecord(object.id()))
+    }
 }
