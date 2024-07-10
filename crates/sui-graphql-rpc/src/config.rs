@@ -1,8 +1,8 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::functional_group::FunctionalGroup;
 use crate::types::big_int::BigInt;
+use crate::{functional_group::FunctionalGroup, types::dot_move::dot_move_service::DotMoveConfig};
 use async_graphql::*;
 use fastcrypto_zkp::bn254::zk_login_api::ZkLoginEnv;
 use serde::{Deserialize, Serialize};
@@ -99,6 +99,7 @@ pub struct ServiceConfig {
 
     #[serde(default)]
     pub(crate) zklogin: ZkLoginConfig,
+    pub(crate) dot_move: DotMoveConfig,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]

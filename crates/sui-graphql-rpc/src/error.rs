@@ -6,6 +6,8 @@ use async_graphql_axum::GraphQLResponse;
 use sui_indexer::errors::IndexerError;
 use sui_json_rpc::name_service::NameServiceError;
 
+use crate::types::dot_move::dot_move_service::DotMoveServiceError;
+
 /// Error codes for the `extensions.code` field of a GraphQL error that originates from outside
 /// GraphQL.
 /// `<https://www.apollographql.com/docs/apollo-server/data/errors/#built-in-error-codes>`
@@ -67,6 +69,8 @@ pub enum Error {
     ProtocolVersionUnsupported(u64, u64),
     #[error(transparent)]
     NameService(#[from] NameServiceError),
+    #[error(transparent)]
+    DotMove(#[from] DotMoveServiceError),
     #[error("'first' and 'last' must not be used together")]
     CursorNoFirstLast,
     #[error("Connection's page size of {0} exceeds max of {1}")]
@@ -82,6 +86,7 @@ impl ErrorExtensions for Error {
     fn extend(&self) -> async_graphql::Error {
         async_graphql::Error::new(format!("{}", self)).extend_with(|_err, e| match self {
             Error::NameService(_)
+            | Error::DotMove(_)
             | Error::CursorNoFirstLast
             | Error::PageTooLarge(_, _)
             | Error::ProtocolVersionUnsupported(_, _)
