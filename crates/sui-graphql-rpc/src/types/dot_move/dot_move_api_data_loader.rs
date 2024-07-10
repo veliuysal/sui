@@ -32,7 +32,7 @@ impl MainnetNamesLoader {
         &self,
         names: &[Name],
         mapping: &mut HashMap<Name, usize>,
-    ) -> Result<String, Error> {
+    ) -> String {
         let mut result = format!(r#"{{ owner(address: "{}") {{"#, self.config.registry_id);
 
         // we create the GraphQL query keys with a `fetch_{id}` prefix, which is accepted on graphql fields.
@@ -57,7 +57,7 @@ impl MainnetNamesLoader {
 
         println!("{}", result);
 
-        Ok(result)
+        result
     }
 }
 
@@ -90,7 +90,7 @@ impl Loader<Name> for MainnetNamesLoader {
         let mut mapping: HashMap<Name, usize> = HashMap::new();
 
         let request_body = GraphQLRequest {
-            query: self.construct_names_graphql_query(keys, &mut mapping)?,
+            query: self.construct_names_graphql_query(keys, &mut mapping),
             variables: serde_json::Value::Null,
         };
 

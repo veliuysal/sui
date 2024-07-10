@@ -122,7 +122,7 @@ impl DotMoveService {
         // if chain_id.identifier().chain() != Chain::Mainnet {
         Self::query_package_by_name_non_mainnet(ctx, &name).await
         // } else {
-            // Ok(None)
+        // Ok(None)
         // }
     }
 
@@ -148,6 +148,15 @@ impl DotMoveService {
         };
 
         Ok(result.map_or(None, |x| x.app_info))
+    }
+
+    async fn query_package_by_name_mainnet(
+        ctx: &Context<'_>,
+        name: &str,
+    ) -> Result<Option<AppInfo>, Error> {
+        let config: &DotMoveConfig = ctx.data_unchecked();
+        let chain_name = Name::from_str(&name)?;
+        let object_id = chain_name.to_dynamic_field_id(config);
     }
 }
 
