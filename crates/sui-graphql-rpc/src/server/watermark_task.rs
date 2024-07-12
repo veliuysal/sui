@@ -4,6 +4,7 @@
 use crate::data::{Db, DbConnection, QueryExecutor};
 use crate::error::Error;
 use crate::metrics::Metrics;
+use crate::types::chain_identifier::{ChainIdentifier, ChainIdentifierLock};
 use async_graphql::ServerError;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use std::mem;
@@ -18,6 +19,7 @@ use tracing::{error, info};
 pub(crate) struct WatermarkTask {
     /// Thread-safe watermark that avoids writer starvation
     watermark: WatermarkLock,
+    chain_identifier: ChainIdentifierLock,
     db: Db,
     metrics: Metrics,
     sleep: Duration,
@@ -50,6 +52,7 @@ impl WatermarkTask {
 
         Self {
             watermark: Default::default(),
+            chain_identifier: Default::default(),
             db,
             metrics,
             sleep,
@@ -59,7 +62,39 @@ impl WatermarkTask {
         }
     }
 
+    // Fetch the chain identifier (once) from the database and cache it.
+    async fn get_and_cache_chain_identifier(&self) {
+        loop {
+            tokio::select! {
+                _ = self.cancel.cancelled() => {
+                    info!("Shutdown signal received, terminating attempt to get chain identifier");
+                    return;
+                },
+                _ = tokio::time::sleep(self.sleep) => {
+                    // we only set the chain_identifier once.
+                    let chain = match ChainIdentifier::query(&self.db).await  {
+                        Ok(Some(chain)) => chain,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            error!("{}", e);
+                            self.metrics.inc_errors(&[ServerError::new(e.to_string(), None)]);
+                            continue;
+                        }
+                    };
+
+                    let mut chain_id_lock = self.chain_identifier.0.write().await;
+                    *chain_id_lock = chain.into();
+                    break
+                }
+            }
+        }
+    }
+
     pub(crate) async fn run(&self) {
+        // We start the task by first finding & setting the chain identifier
+        // so that it can be used in all requests.
+        self.get_and_cache_chain_identifier().await;
+
         loop {
             tokio::select! {
                 _ = self.cancel.cancelled() => {
@@ -94,6 +129,10 @@ impl WatermarkTask {
 
     pub(crate) fn lock(&self) -> WatermarkLock {
         self.watermark.clone()
+    }
+
+    pub(crate) fn chain_id_lock(&self) -> ChainIdentifierLock {
+        self.chain_identifier.clone()
     }
 
     /// Receiver for subscribing to epoch changes.

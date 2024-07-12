@@ -1,75 +1,46 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use crate::{
     data::{Db, DbConnection, QueryExecutor},
     error::Error,
 };
 use async_graphql::*;
-use diesel::{ExpressionMethods, QueryDsl};
-use once_cell::sync::OnceCell;
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use sui_indexer::schema::checkpoints;
 use sui_protocol_config::Chain;
 use sui_types::{
     digests::ChainIdentifier as NativeChainIdentifier, messages_checkpoint::CheckpointDigest,
 };
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct ChainId {
-    pub(crate) identifier: NativeChainIdentifier,
-    pub(crate) chain: Chain,
-}
-
-static ACTIVE_CHAIN_ID: OnceCell<ChainId> = OnceCell::new();
+use tokio::sync::RwLock;
 
 pub(crate) struct ChainIdentifier;
 
-impl ChainId {
-    pub(crate) fn chain(&self) -> &Chain {
-        &self.chain
-    }
-
-    pub(crate) fn identifier(&self) -> &NativeChainIdentifier {
-        &self.identifier
-    }
-}
-
 impl ChainIdentifier {
-    /// Get the chain_id. Saves in cache (once) throughout the service lifecycle.
-    /// Gets initialized from the DB if not found in cache.
-    pub(crate) async fn get_chain_id(db: &Db) -> Option<ChainId> {
-        if let Some(chain_id) = ACTIVE_CHAIN_ID.get() {
-            return Some(*chain_id);
-        };
-
-        let queried_id = Self::query(db).await.ok()?;
-
-        let chain_id = ChainId {
-            identifier: queried_id,
-            chain: queried_id.chain(),
-        };
-
-        ACTIVE_CHAIN_ID.set(chain_id).ok()?;
-
-        Some(chain_id)
-    }
-
     /// Query the Chain Identifier from the DB.
-    async fn query(db: &Db) -> Result<NativeChainIdentifier, Error> {
+    pub(crate) async fn query(db: &Db) -> Result<Option<NativeChainIdentifier>, Error> {
         use checkpoints::dsl;
 
-        let digest_bytes = db
+        let Some(digest_bytes) = db
             .execute(move |conn| {
                 conn.first(move || {
                     dsl::checkpoints
                         .select(dsl::checkpoint_digest)
                         .order_by(dsl::sequence_number.asc())
                 })
+                .optional()
             })
             .await
-            .map_err(|e| Error::Internal(format!("Failed to fetch genesis digest: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Failed to fetch genesis digest: {e}")))?
+        else {
+            return Ok(None);
+        };
 
-        Self::from_bytes(digest_bytes)
+        let native_identifier = Self::from_bytes(digest_bytes)?;
+
+        Ok(Some(native_identifier))
     }
 
     /// Treat `bytes` as a checkpoint digest and extract a chain identifier from it.
@@ -77,5 +48,45 @@ impl ChainIdentifier {
         let genesis_digest = CheckpointDigest::try_from(bytes)
             .map_err(|e| Error::Internal(format!("Failed to deserialize genesis digest: {e}")))?;
         Ok(NativeChainIdentifier::from(genesis_digest))
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct ChainIdentifierLock(pub(crate) Arc<RwLock<ChainId>>);
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ChainId {
+    pub(crate) chain_identifier: NativeChainIdentifier,
+    pub(crate) chain: Chain,
+}
+
+/// ChainId wraps `chain_identifier` and `chain` for quick access,
+/// without having to re-calculate the "chain" every time.
+impl ChainId {
+    pub(crate) async fn new(lock: ChainIdentifierLock) -> Self {
+        let w = lock.0.read().await;
+
+        Self {
+            chain_identifier: w.chain_identifier,
+            chain: w.chain,
+        }
+    }
+
+    pub(crate) fn chain(&self) -> &Chain {
+        &self.chain
+    }
+
+    pub(crate) fn chain_identifier(&self) -> &NativeChainIdentifier {
+        &self.chain_identifier
+    }
+}
+
+impl From<NativeChainIdentifier> for ChainId {
+    fn from(chain_identifier: NativeChainIdentifier) -> Self {
+        let chain = chain_identifier.chain();
+        Self {
+            chain_identifier,
+            chain,
+        }
     }
 }

@@ -11,6 +11,7 @@ use crate::data::package_resolver::{DbPackageStore, PackageResolver};
 use crate::data::{DataLoader, Db};
 use crate::metrics::Metrics;
 use crate::mutation::Mutation;
+use crate::types::chain_identifier::{ChainId, ChainIdentifierLock};
 use crate::types::dot_move::dot_move_api_data_loader::DotMoveDataLoader;
 use crate::types::move_object::IMoveObject;
 use crate::types::object::IObject;
@@ -316,6 +317,7 @@ impl ServerBuilder {
             ))
             .layer(axum::extract::Extension(schema))
             .layer(axum::extract::Extension(watermark_task.lock()))
+            .layer(axum::extract::Extension(watermark_task.chain_id_lock()))
             .layer(Self::cors()?);
 
         Ok(Server {
@@ -474,6 +476,7 @@ async fn graphql_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     schema: axum::Extension<SuiGraphQLSchema>,
     axum::Extension(watermark_lock): axum::Extension<WatermarkLock>,
+    axum::Extension(chain_identifier_lock): axum::Extension<ChainIdentifierLock>,
     headers: HeaderMap,
     req: GraphQLRequest,
 ) -> (axum::http::Extensions, GraphQLResponse) {
@@ -487,6 +490,7 @@ async fn graphql_handler(
     req.data.insert(addr);
 
     req.data.insert(Watermark::new(watermark_lock).await);
+    req.data.insert(ChainId::new(chain_identifier_lock).await);
 
     let result = schema.execute(req).await;
 
@@ -628,6 +632,7 @@ pub mod tests {
             .context_data(query_id())
             .context_data(ip_address())
             .context_data(watermark)
+            .context_data(ChainId::default())
             .context_data(metrics)
     }
 

@@ -8,13 +8,18 @@ use move_core_types::{ident_str, identifier::IdentStr, language_storage::StructT
 use serde::{Deserialize, Serialize};
 use sui_protocol_config::Chain;
 use sui_types::{
-    base_types::{ObjectID, SuiAddress}, collection_types::VecMap, dynamic_field::Field, id::ID, object::MoveObject as NativeMoveObject
+    base_types::{ObjectID, SuiAddress},
+    collection_types::VecMap,
+    dynamic_field::Field,
+    id::ID,
+    object::MoveObject as NativeMoveObject,
 };
 
 use crate::{
     error::Error,
     types::{
-        base64::Base64, chain_identifier::ChainIdentifier, move_object::MoveObject, move_package::{MovePackage, PackageLookup}, object::Object
+        base64::Base64, chain_identifier::ChainId, move_object::MoveObject,
+        move_package::MovePackage, object::Object,
     },
 };
 
@@ -103,28 +108,17 @@ pub enum DotMoveServiceError {
 pub(crate) struct DotMoveService;
 
 impl DotMoveService {
-    // Check if the active chain is mainnet.
-    async fn is_mainnet(ctx: &Context<'_>) -> bool {
-        ChainIdentifier::get_chain_id(ctx.data_unchecked())
-            .await
-            .unwrap_or_default()
-            .identifier()
-            .chain()
-            == Chain::Mainnet
-    }
-
     pub(crate) async fn query_package_by_name(
         ctx: &Context<'_>,
         name: String,
         checkpoint_viewed_at: u64,
     ) -> Result<Option<AppInfo>, Error> {
-        let chain_id = ChainIdentifier::get_chain_id(ctx.data_unchecked())
-            .await
-            .unwrap_or_default();
-            // .ok_or(DotMoveServiceError::ChainIdentifierUnavailable)?;
+        let chain_id: ChainId = *ctx
+            .data()
+            .map_err(|_| DotMoveServiceError::ChainIdentifierUnavailable)?;
 
         // Non-mainnet handling for name resolution (uses mainnet api to resolve names).
-        if chain_id.identifier().chain() != Chain::Mainnet {
+        if chain_id.chain() != &Chain::Mainnet {
             Self::query_package_by_name_non_mainnet(ctx, &name).await
         } else {
             Self::query_package_by_name_mainnet(ctx, &name, checkpoint_viewed_at).await?;
@@ -133,12 +127,10 @@ impl DotMoveService {
     }
 
     pub(crate) async fn type_by_name(
-        ctx: &Context<'_>,
-        name: String,
+        _ctx: &Context<'_>,
+        _name: String,
     ) -> Result<Option<bool>, Error> {
-        let is_mainnet = Self::is_mainnet(ctx).await;
-
-        Ok(Some(is_mainnet))
+        Ok(Some(false))
     }
 
     async fn query_package_by_name_non_mainnet(
@@ -195,7 +187,9 @@ impl DotMoveService {
             } else {
                 MovePackage::latest_at(checkpoint_viewed_at)
             },
-        ).await? else {
+        )
+        .await?
+        else {
             return Ok(None);
         };
 
