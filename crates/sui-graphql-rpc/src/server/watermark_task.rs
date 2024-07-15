@@ -63,12 +63,12 @@ impl WatermarkTask {
     }
 
     // Fetch the chain identifier (once) from the database and cache it.
-    async fn get_and_cache_chain_identifier(&self) {
+    async fn get_and_cache_chain_identifier(&self) -> bool {
         loop {
             tokio::select! {
                 _ = self.cancel.cancelled() => {
                     info!("Shutdown signal received, terminating attempt to get chain identifier");
-                    return;
+                    return false;
                 },
                 _ = tokio::time::sleep(self.sleep) => {
                     // we only set the chain_identifier once.
@@ -84,7 +84,7 @@ impl WatermarkTask {
 
                     let mut chain_id_lock = self.chain_identifier.0.write().await;
                     *chain_id_lock = chain.into();
-                    break
+                    return true;
                 }
             }
         }
@@ -93,7 +93,11 @@ impl WatermarkTask {
     pub(crate) async fn run(&self) {
         // We start the task by first finding & setting the chain identifier
         // so that it can be used in all requests.
-        self.get_and_cache_chain_identifier().await;
+        let cached = self.get_and_cache_chain_identifier().await;
+        // In case we received a cancel signal, we don't want to start the classic watermark task.
+        if !cached {
+            return;
+        };
 
         loop {
             tokio::select! {
