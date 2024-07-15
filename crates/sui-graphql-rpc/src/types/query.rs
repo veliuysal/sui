@@ -12,8 +12,9 @@ use sui_sdk::SuiClient;
 use sui_types::transaction::{TransactionData, TransactionKind};
 use sui_types::{gas_coin::GAS, transaction::TransactionDataAPI, TypeTag};
 
-use super::chain_identifier::ChainId;
+use super::chain_identifier::ChainIdentifier;
 use super::dot_move::dot_move_service::DotMoveService;
+use super::dot_move::named_move_package::NamedMovePackage;
 use super::move_package::{self, MovePackage};
 use super::suins_registration::NameService;
 use super::{
@@ -52,8 +53,8 @@ impl Query {
     /// First four bytes of the network's genesis checkpoint digest (uniquely identifies the
     /// network).
     async fn chain_identifier(&self, ctx: &Context<'_>) -> Result<String> {
-        let chain_id: ChainId = *ctx.data()?;
-        Ok(chain_id.chain_identifier().to_string())
+        let chain_id: ChainIdentifier = *ctx.data()?;
+        Ok(chain_id.0.to_string())
     }
 
     /// Range of checkpoints that the RPC has data available for (for data
@@ -498,17 +499,16 @@ impl Query {
     }
 
     /// Fetch a package by its name (using dot move service)
-    async fn package_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<Address>> {
+    async fn package_by_name(
+        &self,
+        ctx: &Context<'_>,
+        name: String,
+    ) -> Result<Option<NamedMovePackage>> {
         let Watermark { checkpoint, .. } = *ctx.data()?;
 
-        Ok(DotMoveService::query_package_by_name(ctx, name, checkpoint)
+        Ok(NamedMovePackage::query(ctx, name, checkpoint)
             .await
-            .extend()?
-            .and_then(|r| r.package_address)
-            .map(|a| Address {
-                address: a.into(),
-                checkpoint_viewed_at: checkpoint,
-            }))
+            .extend()?)
     }
 
     /// Fetch a type by its name (using dot move service)

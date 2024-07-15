@@ -13,6 +13,11 @@ use super::dot_move_service::{AppRecord, DotMoveConfig, DotMoveServiceError, Nam
 /// GraphQL fragment to query the values of the dynamic fields.
 const QUERY_FRAGMENT: &str =
     "fragment RECORD_VALUES on DynamicField { value { ... on MoveValue { bcs } } }";
+const FETCH_PREFIX: &str = "fetch_";
+
+fn fetch_key(idx: &usize) -> String {
+    format!("{}{}", FETCH_PREFIX, idx)
+}
 
 pub(crate) struct MainnetNamesLoader {
     client: reqwest::Client,
@@ -45,8 +50,10 @@ impl MainnetNamesLoader {
             mapping.insert(name.clone(), index);
 
             let field_str = format!(
-                r#"fetch_{}: dynamicField(name: {{ type: "{}::name::Name", bcs: {} }}) {{ ...RECORD_VALUES }}"#,
-                index, self.config.package_address, bcs_base64
+                r#"{}: dynamicField(name: {{ type: "{}::name::Name", bcs: {} }}) {{ ...RECORD_VALUES }}"#,
+                fetch_key(&index),
+                self.config.package_address,
+                bcs_base64
             );
 
             result.push_str(&field_str);
@@ -113,24 +120,25 @@ impl Loader<Name> for MainnetNamesLoader {
 
         let names = response_json.data.owner.names;
 
-        mapping.keys().for_each(|k| {
+        for k in mapping.keys() {
+            // Safe unwrap: we inserted the keys in the mapping before.
             let idx = mapping.get(k).unwrap();
 
-            let Some(Some(bcs)) = names.get(&format!("fetch_{}", idx)) else {
-                return;
+            let Some(Some(bcs)) = names.get(&format!("{}", fetch_key(idx))) else {
+                continue;
             };
 
             let Some(bytes) = Base64::from_str(&bcs.value.bcs).ok() else {
-                return;
+                continue;
             };
 
             let Some(app_record) = bcs::from_bytes::<AppRecord>(&bytes.0).ok() else {
-                return;
+                continue;
             };
 
             // only insert the record if it is a valid `app_record`
             results.insert(k.clone(), app_record);
-        });
+        }
 
         Ok(results)
     }

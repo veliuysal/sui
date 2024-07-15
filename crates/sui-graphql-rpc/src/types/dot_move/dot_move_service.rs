@@ -6,7 +6,6 @@ use std::str::FromStr;
 use async_graphql::{Context, ScalarType};
 use move_core_types::{ident_str, identifier::IdentStr, language_storage::StructTag};
 use serde::{Deserialize, Serialize};
-use sui_protocol_config::Chain;
 use sui_types::{
     base_types::{ObjectID, SuiAddress},
     collection_types::VecMap,
@@ -15,73 +14,7 @@ use sui_types::{
     object::MoveObject as NativeMoveObject,
 };
 
-use crate::{
-    error::Error,
-    types::{
-        base64::Base64, chain_identifier::ChainId, move_object::MoveObject,
-        move_package::MovePackage, object::Object,
-    },
-};
-
-use super::dot_move_api_data_loader::DotMoveDataLoader;
-
-const DOT_MOVE_MODULE: &IdentStr = ident_str!("name");
-const DOT_MOVE_TYPE: &IdentStr = ident_str!("Name");
-const DOT_MOVE_PACKAGE: &str = "0x1a841abe817c38221596856bc975b3b84f2f68692191e9247e185213d3d02fd8";
-const DOT_MOVE_REGISTRY: &str =
-    "0x250b60446b8e7b8d9d7251600a7228dbfda84ccb4b23a56a700d833e221fae4f";
-const DEFAULT_PAGE_LIMIT: u16 = 50;
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub struct DotMoveConfig {
-    pub(crate) mainnet_api_url: Option<String>,
-    #[serde(default = "default_page_limit")]
-    pub(crate) page_limit: u16,
-    #[serde(default = "default_package_address")]
-    pub(crate) package_address: SuiAddress,
-    #[serde(default = "default_registry_id")]
-    pub(crate) registry_id: ObjectID,
-}
-
-impl DotMoveConfig {
-    pub(crate) fn new(
-        mainnet_api_url: Option<String>,
-        page_limit: u16,
-        package_address: SuiAddress,
-        registry_id: ObjectID,
-    ) -> Self {
-        Self {
-            mainnet_api_url,
-            page_limit,
-            package_address,
-            registry_id,
-        }
-    }
-}
-
-fn default_package_address() -> SuiAddress {
-    SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap()
-}
-
-fn default_registry_id() -> ObjectID {
-    ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap()
-}
-
-fn default_page_limit() -> u16 {
-    DEFAULT_PAGE_LIMIT
-}
-
-impl Default for DotMoveConfig {
-    fn default() -> Self {
-        Self::new(
-            None,
-            DEFAULT_PAGE_LIMIT,
-            default_package_address(),
-            default_registry_id(),
-        )
-    }
-}
+use crate::{error::Error, types::base64::Base64};
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum DotMoveServiceError {
@@ -108,94 +41,11 @@ pub enum DotMoveServiceError {
 pub(crate) struct DotMoveService;
 
 impl DotMoveService {
-    pub(crate) async fn query_package_by_name(
-        ctx: &Context<'_>,
-        name: String,
-        checkpoint_viewed_at: u64,
-    ) -> Result<Option<AppInfo>, Error> {
-        let chain_id: ChainId = *ctx
-            .data()
-            .map_err(|_| DotMoveServiceError::ChainIdentifierUnavailable)?;
-
-        // Non-mainnet handling for name resolution (uses mainnet api to resolve names).
-        if chain_id.chain() != &Chain::Mainnet {
-            Self::query_package_by_name_non_mainnet(ctx, &name).await
-        } else {
-            Self::query_package_by_name_mainnet(ctx, &name, checkpoint_viewed_at).await?;
-            Ok(None)
-        }
-    }
-
     pub(crate) async fn type_by_name(
         _ctx: &Context<'_>,
         _name: String,
     ) -> Result<Option<bool>, Error> {
         Ok(Some(false))
-    }
-
-    async fn query_package_by_name_non_mainnet(
-        ctx: &Context<'_>,
-        name: &str,
-    ) -> Result<Option<AppInfo>, Error> {
-        let DotMoveDataLoader(loader) = &ctx.data_unchecked();
-
-        let chain_name = Name::from_str(&name)?;
-        let Some(result) = loader.load_one(chain_name).await? else {
-            return Ok(None);
-        };
-
-        // TODO: Use this AppRecord to query the package...
-
-        Ok(result.app_info)
-    }
-
-    async fn query_package_by_name_mainnet(
-        ctx: &Context<'_>,
-        name: &str,
-        checkpoint_viewed_at: u64,
-    ) -> Result<Option<AppInfo>, Error> {
-        let config: &DotMoveConfig = ctx.data_unchecked();
-        let versioned = VersionedName::from_str(&name)?;
-
-        let Some(df) = MoveObject::query(
-            ctx,
-            versioned.name.to_dynamic_field_id(config).into(),
-            Object::latest_at(checkpoint_viewed_at),
-        )
-        .await?
-        else {
-            return Ok(None);
-        };
-
-        let app_record = AppRecord::try_from(df.native)?;
-
-        let Some(app_info) = app_record.app_info else {
-            return Ok(None);
-        };
-
-        // TODO: Decide if this is an error or just an option return.
-        let Some(package_address) = app_info.package_address else {
-            return Ok(None);
-        };
-
-        // let's now find the package at a specified version (or latest)
-        let Some(package_at_version) = MovePackage::query(
-            ctx,
-            package_address.into(),
-            if versioned.version.is_some() {
-                MovePackage::by_version(versioned.version.unwrap(), checkpoint_viewed_at)
-            } else {
-                MovePackage::latest_at(checkpoint_viewed_at)
-            },
-        )
-        .await?
-        else {
-            return Ok(None);
-        };
-
-        let _id = package_at_version.native.id();
-
-        Ok(None)
     }
 }
 
@@ -293,5 +143,82 @@ impl TryFrom<NativeMoveObject> for AppRecord {
             .to_rust::<Field<Name, Self>>()
             .map(|record| record.value)
             .ok_or_else(|| DotMoveServiceError::FailedToDeserializeDotMoveRecord(object.id()))
+    }
+}
+
+// Config / constants of the service.
+
+const DOT_MOVE_MODULE: &IdentStr = ident_str!("name");
+const DOT_MOVE_TYPE: &IdentStr = ident_str!("Name");
+const DOT_MOVE_PACKAGE: &str = "0x1a841abe817c38221596856bc975b3b84f2f68692191e9247e185213d3d02fd8";
+const DOT_MOVE_REGISTRY: &str =
+    "0x250b60446b8e7b8d9d7251600a7228dbfda84ccb4b23a56a700d833e221fae4f";
+const DEFAULT_PAGE_LIMIT: u16 = 50;
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub(crate) enum ResolutionType {
+    Internal,
+    External,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct DotMoveConfig {
+    pub(crate) mainnet_api_url: Option<String>,
+    #[serde(default = "default_resolution_type")]
+    pub(crate) resolution_type: ResolutionType,
+    #[serde(default = "default_page_limit")]
+    pub(crate) page_limit: u16,
+    #[serde(default = "default_package_address")]
+    pub(crate) package_address: SuiAddress,
+    #[serde(default = "default_registry_id")]
+    pub(crate) registry_id: ObjectID,
+}
+
+impl DotMoveConfig {
+    pub(crate) fn new(
+        resolution_type: ResolutionType,
+        mainnet_api_url: Option<String>,
+        page_limit: u16,
+        package_address: SuiAddress,
+        registry_id: ObjectID,
+    ) -> Self {
+        Self {
+            resolution_type,
+            mainnet_api_url,
+            page_limit,
+            package_address,
+            registry_id,
+        }
+    }
+}
+
+fn default_resolution_type() -> ResolutionType {
+    ResolutionType::Internal
+}
+
+fn default_package_address() -> SuiAddress {
+    SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap()
+}
+
+fn default_registry_id() -> ObjectID {
+    ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap()
+}
+
+fn default_page_limit() -> u16 {
+    DEFAULT_PAGE_LIMIT
+}
+
+// TODO: Keeping the values as is, because we'll remove the default getters
+// when we refactor to use `[GraphqlConfig]` macro.
+impl Default for DotMoveConfig {
+    fn default() -> Self {
+        Self::new(
+            ResolutionType::Internal,
+            None,
+            DEFAULT_PAGE_LIMIT,
+            SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap(),
+            ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap(),
+        )
     }
 }

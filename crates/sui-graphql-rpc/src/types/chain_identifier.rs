@@ -10,13 +10,13 @@ use crate::{
 use async_graphql::*;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use sui_indexer::schema::checkpoints;
-use sui_protocol_config::Chain;
 use sui_types::{
     digests::ChainIdentifier as NativeChainIdentifier, messages_checkpoint::CheckpointDigest,
 };
 use tokio::sync::RwLock;
 
-pub(crate) struct ChainIdentifier;
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ChainIdentifier(pub(crate) NativeChainIdentifier);
 
 impl ChainIdentifier {
     /// Query the Chain Identifier from the DB.
@@ -49,44 +49,18 @@ impl ChainIdentifier {
             .map_err(|e| Error::Internal(format!("Failed to deserialize genesis digest: {e}")))?;
         Ok(NativeChainIdentifier::from(genesis_digest))
     }
-}
 
-#[derive(Clone, Default)]
-pub(crate) struct ChainIdentifierLock(pub(crate) Arc<RwLock<ChainId>>);
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct ChainId {
-    pub(crate) chain_identifier: NativeChainIdentifier,
-    pub(crate) chain: Chain,
-}
-
-/// ChainId wraps `chain_identifier` and `chain` for quick access,
-/// without having to re-calculate the "chain" every time.
-impl ChainId {
     pub(crate) async fn new(lock: ChainIdentifierLock) -> Self {
         let w = lock.0.read().await;
 
-        Self {
-            chain_identifier: w.chain_identifier,
-            chain: w.chain,
-        }
-    }
-
-    pub(crate) fn chain(&self) -> &Chain {
-        &self.chain
-    }
-
-    pub(crate) fn chain_identifier(&self) -> &NativeChainIdentifier {
-        &self.chain_identifier
+        Self(w.0)
     }
 }
 
-impl From<NativeChainIdentifier> for ChainId {
+impl From<NativeChainIdentifier> for ChainIdentifier {
     fn from(chain_identifier: NativeChainIdentifier) -> Self {
-        let chain = chain_identifier.chain();
-        Self {
-            chain_identifier,
-            chain,
-        }
+        Self(chain_identifier)
     }
 }
+#[derive(Clone, Default)]
+pub(crate) struct ChainIdentifierLock(pub(crate) Arc<RwLock<ChainIdentifier>>);

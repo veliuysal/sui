@@ -12,6 +12,15 @@ pub struct VecMap<K, V> {
     pub contents: Vec<Entry<K, V>>,
 }
 
+impl<K: PartialEq, V> VecMap<K, V> {
+    pub fn get(&self, key: &K) -> Option<&V> {
+        self.contents
+            .iter()
+            .find(|entry| &entry.key == key)
+            .map(|entry| &entry.value)
+    }
+}
+
 /// Rust version of the Move sui::vec_map::Entry type
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Entry<K, V> {
