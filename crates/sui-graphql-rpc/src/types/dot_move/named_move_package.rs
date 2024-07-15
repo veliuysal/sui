@@ -11,10 +11,10 @@ use crate::{
 };
 
 use super::{
-    data_loader::DotMoveDataLoader,
-    dot_move_service::{
+    config::{
         AppInfo, AppRecord, DotMoveConfig, DotMoveServiceError, ResolutionType, VersionedName,
     },
+    data_loader::DotMoveDataLoader,
 };
 
 #[derive(SimpleObject)]
@@ -26,11 +26,11 @@ pub(crate) struct NamedMovePackage {
 impl NamedMovePackage {
     pub(crate) async fn query(
         ctx: &Context<'_>,
-        name: String,
+        name: &str,
         checkpoint_viewed_at: u64,
     ) -> Result<Option<Self>, Error> {
         let config: &DotMoveConfig = ctx.data_unchecked();
-        let versioned = VersionedName::from_str(&name)?;
+        let versioned = VersionedName::from_str(name)?;
 
         // Non-mainnet handling for name resolution (uses mainnet api to resolve names).
         if config.resolution_type == ResolutionType::Internal {

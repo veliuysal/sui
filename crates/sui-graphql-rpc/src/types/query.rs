@@ -13,8 +13,8 @@ use sui_types::transaction::{TransactionData, TransactionKind};
 use sui_types::{gas_coin::GAS, transaction::TransactionDataAPI, TypeTag};
 
 use super::chain_identifier::ChainIdentifier;
-use super::dot_move::dot_move_service::DotMoveService;
 use super::dot_move::named_move_package::NamedMovePackage;
+use super::dot_move::named_type::NamedType;
 use super::move_package::{self, MovePackage};
 use super::suins_registration::NameService;
 use super::{
@@ -506,14 +506,20 @@ impl Query {
     ) -> Result<Option<NamedMovePackage>> {
         let Watermark { checkpoint, .. } = *ctx.data()?;
 
-        Ok(NamedMovePackage::query(ctx, name, checkpoint)
+        NamedMovePackage::query(ctx, &name, checkpoint)
             .await
-            .extend()?)
+            .extend()
     }
 
-    /// Fetch a type by its name (using dot move service)
-    async fn type_by_name(&self, ctx: &Context<'_>, name: String) -> Result<Option<bool>> {
-        DotMoveService::type_by_name(ctx, name).await.extend()
+    async fn type_by_name(&self, ctx: &Context<'_>, name: String) -> Result<MoveType> {
+        let Watermark { checkpoint, .. } = *ctx.data()?;
+        let type_tag = NamedType::query(ctx, &name, checkpoint).await?;
+
+        Ok(MoveType::new(
+            TypeTag::from_str(&type_tag)
+                .map_err(|e| Error::Client(format!("Bad type: {e}")))
+                .extend()?,
+        ))
     }
 
     /// The coin metadata associated with the given coin type.

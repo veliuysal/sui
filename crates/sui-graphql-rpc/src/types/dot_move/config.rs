@@ -3,8 +3,10 @@
 
 use std::str::FromStr;
 
-use async_graphql::{Context, ScalarType};
+use async_graphql::ScalarType;
 use move_core_types::{ident_str, identifier::IdentStr, language_storage::StructTag};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sui_types::{
     base_types::{ObjectID, SuiAddress},
@@ -14,7 +16,27 @@ use sui_types::{
     object::MoveObject as NativeMoveObject,
 };
 
-use crate::{error::Error, types::base64::Base64};
+use crate::types::base64::Base64;
+
+const PLAIN_NAME_REGEX: &str = r"[A-Za-z0-9._%+-_/]{1,63}@[A-Za-z0-9.-_/]{1,63}";
+
+// Versioned name regex is much more strict, as it accepts a versioned OR unversioned name.
+// This name has to be in the format `app@org/v1`.
+// The version is optional, and if it is not present, we default to the latest version.
+// The version is a number, and it has to be a positive integer.
+// The name and org parts can only be lower case, numbers, and dashes, while dashes cannot be
+// at the beginning or end of the name, nor can there be continuous dashes.
+const VERSIONED_NAME_REGEX: &str =
+    r"^([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:/v(\d+))?$";
+
+// A regular expression that catches all possible dot move names in a type tag.
+// This regex does not care about versioning, as we always use "latest", and instead
+// will fail to parse the type tag if the name has a version in it.
+pub(crate) static PLAIN_NAME_REG: Lazy<Regex> = Lazy::new(|| Regex::new(PLAIN_NAME_REGEX).unwrap());
+
+// A regular expression that catches a name in the format `app@org/v1`.
+// This regex is used to parse the name and version from the type tag.
+static VERSIONED_NAME_REG: Lazy<Regex> = Lazy::new(|| Regex::new(VERSIONED_NAME_REGEX).unwrap());
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum DotMoveServiceError {
@@ -36,17 +58,12 @@ pub enum DotMoveServiceError {
 
     #[error("Dot Move Internal Error: Failed to deserialize DotMove record ${0}.")]
     FailedToDeserializeDotMoveRecord(ObjectID),
-}
 
-pub(crate) struct DotMoveService;
+    #[error("Dot Move: The name {0} was not found.")]
+    NameNotFound(String),
 
-impl DotMoveService {
-    pub(crate) async fn type_by_name(
-        _ctx: &Context<'_>,
-        _name: String,
-    ) -> Result<Option<bool>, Error> {
-        Ok(Some(false))
-    }
+    #[error("Dot Move: Invalid version number: {0}")]
+    InvalidVersion(String),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -63,6 +80,12 @@ pub(crate) struct Name {
 }
 
 impl Name {
+    pub fn new(app_name: &str, org_name: &str) -> Self {
+        let normalized = format!("{}@{}", app_name, org_name);
+        let labels = vec![org_name.to_string(), app_name.to_string()];
+        Self { labels, normalized }
+    }
+
     pub fn type_(package_address: SuiAddress) -> StructTag {
         StructTag {
             address: package_address.into(),
@@ -92,29 +115,34 @@ impl Name {
     }
 }
 
-impl FromStr for Name {
-    type Err = DotMoveServiceError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let labels = s.split('@').rev().map(|x| x.to_string()).collect();
-        // TODO: Add validation on labels etc.
-
-        Ok(Self {
-            labels,
-            normalized: s.to_string(),
-        })
-    }
-}
-
 impl FromStr for VersionedName {
     type Err = DotMoveServiceError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // TODO: Parse version
-        Ok(Self {
-            version: None,
-            name: Name::from_str(s)?,
-        })
+        if let Some(caps) = VERSIONED_NAME_REG.captures(s) {
+            let Some(app_name) = caps.get(1).map(|x| x.as_str()) else {
+                return Err(DotMoveServiceError::InvalidName(s.to_string()));
+            };
+            let Some(org_name) = caps.get(2).map(|x| x.as_str()) else {
+                return Err(DotMoveServiceError::InvalidName(s.to_string()));
+            };
+
+            let version = if let Some(v) = caps.get(3).map(|x| x.as_str()) {
+                Some(
+                    v.parse::<u64>()
+                        .map_err(|_| DotMoveServiceError::InvalidVersion(v.to_string()))?,
+                )
+            } else {
+                None
+            };
+
+            Ok(Self {
+                version,
+                name: Name::new(app_name, org_name),
+            })
+        } else {
+            Err(DotMoveServiceError::InvalidName(s.to_string()))
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::types::big_int::BigInt;
-use crate::{functional_group::FunctionalGroup, types::dot_move::dot_move_service::DotMoveConfig};
+use crate::{functional_group::FunctionalGroup, types::dot_move::config::DotMoveConfig};
 use async_graphql::*;
 use fastcrypto_zkp::bn254::zk_login_api::ZkLoginEnv;
 use serde::{Deserialize, Serialize};

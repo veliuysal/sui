@@ -8,15 +8,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{error::Error, types::base64::Base64};
 
-use super::dot_move_service::{AppRecord, DotMoveConfig, DotMoveServiceError, Name};
+use super::config::{AppRecord, DotMoveConfig, DotMoveServiceError, Name};
 
 /// GraphQL fragment to query the values of the dynamic fields.
 const QUERY_FRAGMENT: &str =
     "fragment RECORD_VALUES on DynamicField { value { ... on MoveValue { bcs } } }";
-const FETCH_PREFIX: &str = "fetch_";
 
 fn fetch_key(idx: &usize) -> String {
-    format!("{}{}", FETCH_PREFIX, idx)
+    format!("fetch_{}", idx)
 }
 
 pub(crate) struct MainnetNamesLoader {
@@ -124,7 +123,7 @@ impl Loader<Name> for MainnetNamesLoader {
             // Safe unwrap: we inserted the keys in the mapping before.
             let idx = mapping.get(k).unwrap();
 
-            let Some(Some(bcs)) = names.get(&format!("{}", fetch_key(idx))) else {
+            let Some(Some(bcs)) = names.get(&fetch_key(idx)) else {
                 continue;
             };
 

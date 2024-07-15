@@ -6,7 +6,7 @@ use async_graphql_axum::GraphQLResponse;
 use sui_indexer::errors::IndexerError;
 use sui_json_rpc::name_service::NameServiceError;
 
-use crate::types::dot_move::dot_move_service::DotMoveServiceError;
+use crate::types::dot_move::config::DotMoveServiceError;
 
 /// Error codes for the `extensions.code` field of a GraphQL error that originates from outside
 /// GraphQL.
