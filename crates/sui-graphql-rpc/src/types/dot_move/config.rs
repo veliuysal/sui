@@ -18,7 +18,7 @@ use sui_types::{
 
 use crate::types::base64::Base64;
 
-const PLAIN_NAME_REGEX: &str = r"[A-Za-z0-9._%+-_/]{1,63}@[A-Za-z0-9.-_/]{1,63}";
+const PLAIN_NAME_REGEX: &str = r"[A-Za-z0-9._%+-]{1,63}@[A-Za-z0-9.-]{1,63}";
 
 // Versioned name regex is much more strict, as it accepts a versioned OR unversioned name.
 // This name has to be in the format `app@org/v1`.
