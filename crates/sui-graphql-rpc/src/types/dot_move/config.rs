@@ -18,7 +18,10 @@ use sui_types::{
 
 use crate::types::base64::Base64;
 
-const PLAIN_NAME_REGEX: &str = r"[A-Za-z0-9._%+-]{1,63}@[A-Za-z0-9.-]{1,63}";
+const MAX_LABEL_LENGTH: usize = 63;
+
+const VERSIONED_NAME_UNBOUND_REGEX: &str =
+    r"([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:/v(\d+))?";
 
 // Versioned name regex is much more strict, as it accepts a versioned OR unversioned name.
 // This name has to be in the format `app@org/v1`.
@@ -30,13 +33,15 @@ const VERSIONED_NAME_REGEX: &str =
     r"^([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:/v(\d+))?$";
 
 // A regular expression that catches all possible dot move names in a type tag.
-// This regex does not care about versioning, as we always use "latest", and instead
-// will fail to parse the type tag if the name has a version in it.
-pub(crate) static PLAIN_NAME_REG: Lazy<Regex> = Lazy::new(|| Regex::new(PLAIN_NAME_REGEX).unwrap());
+pub(crate) static VERSIONED_NAME_UNBOUND_REG: Lazy<Regex> =
+    Lazy::new(|| Regex::new(VERSIONED_NAME_UNBOUND_REGEX).unwrap());
 
 // A regular expression that catches a name in the format `app@org/v1`.
 // This regex is used to parse the name and version from the type tag.
-static VERSIONED_NAME_REG: Lazy<Regex> = Lazy::new(|| Regex::new(VERSIONED_NAME_REGEX).unwrap());
+// This has a bound (needs to start and end with this format) compared to the unbound regex,
+// which is used to parse all names from a type tag.
+pub(crate) static VERSIONED_NAME_REG: Lazy<Regex> =
+    Lazy::new(|| Regex::new(VERSIONED_NAME_REGEX).unwrap());
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum DotMoveServiceError {
@@ -67,7 +72,7 @@ pub enum DotMoveServiceError {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub(crate) struct VersionedName {
+pub struct VersionedName {
     /// A version name defaults at None, which means we need the latest version.
     pub version: Option<u64>,
     pub name: Name,
@@ -124,6 +129,10 @@ impl FromStr for VersionedName {
                 return Err(DotMoveServiceError::InvalidName(s.to_string()));
             };
             let Some(org_name) = caps.get(2).map(|x| x.as_str()) else {
+                return Err(DotMoveServiceError::InvalidName(s.to_string()));
+            };
+
+            if (org_name.len() > MAX_LABEL_LENGTH) || (app_name.len() > MAX_LABEL_LENGTH) {
                 return Err(DotMoveServiceError::InvalidName(s.to_string()));
             };
 
@@ -248,5 +257,113 @@ impl Default for DotMoveConfig {
             SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap(),
             ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VersionedName;
+    use std::str::FromStr;
+
+    #[test]
+    fn parse_some_names() {
+        let versioned = VersionedName::from_str("app@org/v1").unwrap();
+        assert_eq!(versioned.name.normalized, "app@org");
+        assert!(versioned.version.is_some_and(|x| x == 1));
+
+        assert!(VersionedName::from_str("app@org/v34")
+            .unwrap()
+            .version
+            .is_some_and(|x| x == 34));
+        assert!(VersionedName::from_str("app@org")
+            .unwrap()
+            .version
+            .is_none());
+
+        let ok_names = vec![
+            "1-app@org/v1",
+            "1-app@org/v34",
+            "1-app@org"
+        ];
+
+        let composite_ok_names = vec![
+            format!("{}@org/v1", generate_fixed_string(63)),
+            format!("{}-app@org/v34", generate_fixed_string(59)),
+            format!("{}@{}", generate_fixed_string(63), generate_fixed_string(63)),
+            format!(
+                "{}@{}-{}",
+                generate_fixed_string(63),
+                generate_fixed_string(30),
+                generate_fixed_string(30)
+            ),
+        ];
+
+        for name in ok_names {
+            assert!(VersionedName::from_str(name).is_ok());
+        };
+        for name in composite_ok_names {
+            assert!(VersionedName::from_str(&name).is_ok());
+        };
+
+        let not_ok_names = vec![
+            "-app@org",
+            "1.app@org",
+            "1--app@org",
+            "app-@org",
+            "app--@org",
+            "app@org/",
+            "app@org/v",
+            "app@org/veh",
+            "@org",
+            "app@/veh",
+            "app",
+            "@",
+            "ap@@org",
+            "ap!org",
+            "ap#org",
+            "ap#org@org",
+            "app%org",
+            "",
+            " "
+        ];
+        let composite_err_names = vec![
+            format!(
+                "{}--{}@{}",
+                generate_fixed_string(10),
+                generate_fixed_string(10),
+                generate_fixed_string(63)
+            ),
+            format!(
+                "--{}-{}@{}",
+                generate_fixed_string(10),
+                generate_fixed_string(10),
+                generate_fixed_string(63)
+            ),
+            format!(
+                "{}@{}--{}",
+                generate_fixed_string(63),
+                generate_fixed_string(30),
+                generate_fixed_string(30)
+            ),
+        ];
+
+        for name in not_ok_names {
+            assert!(VersionedName::from_str(name).is_err());
+        };
+        for name in composite_err_names {
+            assert!(VersionedName::from_str(&name).is_err());
+        };
+    }
+
+    fn generate_fixed_string(len: usize) -> String {
+        // Define the characters to use in the string
+        let chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+        // Repeat the characters to ensure we have at least 63 characters
+        let repeated_chars = chars.repeat(3);
+
+        // Take the first 63 characters to form the string
+        let fixed_string = &repeated_chars[0..len];
+
+        fixed_string.to_string()
     }
 }
