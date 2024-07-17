@@ -21,7 +21,7 @@ use crate::types::base64::Base64;
 const MAX_LABEL_LENGTH: usize = 63;
 
 const VERSIONED_NAME_UNBOUND_REGEX: &str =
-    r"([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:/v(\d+))?";
+    r"([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:\/v(\d+))?";
 
 // Versioned name regex is much more strict, as it accepts a versioned OR unversioned name.
 // This name has to be in the format `app@org/v1`.
@@ -30,7 +30,7 @@ const VERSIONED_NAME_UNBOUND_REGEX: &str =
 // The name and org parts can only be lower case, numbers, and dashes, while dashes cannot be
 // at the beginning or end of the name, nor can there be continuous dashes.
 const VERSIONED_NAME_REGEX: &str =
-    r"^([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:/v(\d+))?$";
+    r"^([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:\/v(\d+))?$";
 
 // A regular expression that catches all possible dot move names in a type tag.
 pub(crate) static VERSIONED_NAME_UNBOUND_REG: Lazy<Regex> =
@@ -280,16 +280,16 @@ mod tests {
             .version
             .is_none());
 
-        let ok_names = vec![
-            "1-app@org/v1",
-            "1-app@org/v34",
-            "1-app@org"
-        ];
+        let ok_names = vec!["1-app@org/v1", "1-app@org/v34", "1-app@org"];
 
         let composite_ok_names = vec![
             format!("{}@org/v1", generate_fixed_string(63)),
             format!("{}-app@org/v34", generate_fixed_string(59)),
-            format!("{}@{}", generate_fixed_string(63), generate_fixed_string(63)),
+            format!(
+                "{}@{}",
+                generate_fixed_string(63),
+                generate_fixed_string(63)
+            ),
             format!(
                 "{}@{}-{}",
                 generate_fixed_string(63),
@@ -300,10 +300,10 @@ mod tests {
 
         for name in ok_names {
             assert!(VersionedName::from_str(name).is_ok());
-        };
+        }
         for name in composite_ok_names {
             assert!(VersionedName::from_str(&name).is_ok());
-        };
+        }
 
         let not_ok_names = vec![
             "-app@org",
@@ -324,7 +324,7 @@ mod tests {
             "ap#org@org",
             "app%org",
             "",
-            " "
+            " ",
         ];
         let composite_err_names = vec![
             format!(
@@ -349,10 +349,10 @@ mod tests {
 
         for name in not_ok_names {
             assert!(VersionedName::from_str(name).is_err());
-        };
+        }
         for name in composite_err_names {
             assert!(VersionedName::from_str(&name).is_err());
-        };
+        }
     }
 
     fn generate_fixed_string(len: usize) -> String {

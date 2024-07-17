@@ -86,10 +86,8 @@ impl Loader<Name> for MainnetNamesLoader {
     /// We handle the cases where individual queries fail, to ensure that a failed query cannot affect
     /// a successful one.
     async fn load(&self, keys: &[Name]) -> Result<HashMap<Name, AppRecord>, Error> {
-        if self.config.mainnet_api_url.is_none() {
-            return Err(Error::DotMove(
-                DotMoveServiceError::MainnetApiUrlUnavailable,
-            ));
+        let Some(mainnet_api_url) = self.config.mainnet_api_url.as_ref() else {
+            return Err(Error::DotMove(DotMoveServiceError::MainnetApiUrlUnavailable));
         };
 
         let mut results: HashMap<Name, AppRecord> = HashMap::new();
@@ -102,7 +100,7 @@ impl Loader<Name> for MainnetNamesLoader {
 
         let res = self
             .client
-            .post(self.config.mainnet_api_url.as_ref().unwrap())
+            .post(mainnet_api_url)
             .json(&request_body)
             .send()
             .await

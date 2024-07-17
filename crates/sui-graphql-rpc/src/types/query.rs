@@ -511,6 +511,7 @@ impl Query {
             .extend()
     }
 
+    /// Fetch a type that includes dot move service names in it.
     async fn type_by_name(&self, ctx: &Context<'_>, name: String) -> Result<MoveType> {
         let Watermark { checkpoint, .. } = *ctx.data()?;
         let type_tag = NamedType::query(ctx, &name, checkpoint).await?;
