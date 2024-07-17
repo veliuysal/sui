@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::types::big_int::BigInt;
+use crate::types::dot_move::config::ResolutionType;
 use crate::{functional_group::FunctionalGroup, types::dot_move::config::DotMoveConfig};
 use async_graphql::*;
 use fastcrypto_zkp::bn254::zk_login_api::ZkLoginEnv;
 use serde::{Deserialize, Serialize};
+use sui_types::base_types::{ObjectID, SuiAddress};
 use std::{collections::BTreeSet, fmt::Display, time::Duration};
 use sui_json_rpc::name_service::NameServiceConfig;
 // TODO: calculate proper cost limits
@@ -99,6 +101,8 @@ pub struct ServiceConfig {
 
     #[serde(default)]
     pub(crate) zklogin: ZkLoginConfig,
+
+    #[serde(default)]
     pub(crate) dot_move: DotMoveConfig,
 }
 
@@ -409,6 +413,23 @@ impl ServiceConfig {
                 env: ZkLoginEnv::Test,
             },
             ..Default::default()
+        }
+    }
+
+    pub fn dot_move_test_defaults(external: bool, endpoint: Option<String>, pkg_address: Option<SuiAddress>, object_id: Option<ObjectID>) -> Self {
+        Self {
+            dot_move: DotMoveConfig {
+                resolution_type: if external {
+                    ResolutionType::External
+                } else {
+                    ResolutionType::Internal
+                },
+                mainnet_api_url: endpoint,
+                package_address: pkg_address.unwrap_or_default(),
+                registry_id: object_id.unwrap_or(ObjectID::random()),
+                ..Default::default()
+            },
+            ..Self::test_defaults()
         }
     }
 }

@@ -87,7 +87,9 @@ impl Loader<Name> for MainnetNamesLoader {
     /// a successful one.
     async fn load(&self, keys: &[Name]) -> Result<HashMap<Name, AppRecord>, Error> {
         let Some(mainnet_api_url) = self.config.mainnet_api_url.as_ref() else {
-            return Err(Error::DotMove(DotMoveServiceError::MainnetApiUrlUnavailable));
+            return Err(Error::DotMove(
+                DotMoveServiceError::MainnetApiUrlUnavailable,
+            ));
         };
 
         let mut results: HashMap<Name, AppRecord> = HashMap::new();

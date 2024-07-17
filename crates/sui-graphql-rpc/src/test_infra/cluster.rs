@@ -52,12 +52,15 @@ pub struct Cluster {
     pub indexer_join_handle: JoinHandle<Result<(), IndexerError>>,
     pub graphql_server_join_handle: JoinHandle<()>,
     pub graphql_client: SimpleClient,
+    pub graphql_cancellation_token: CancellationToken,
+    pub graphql_connection_config: ConnectionConfig,
 }
 
 /// Starts a validator, fullnode, indexer, and graphql service for testing.
 pub async fn start_cluster(
     graphql_connection_config: ConnectionConfig,
     internal_data_source_rpc_port: Option<u16>,
+    service_config: Option<ServiceConfig>,
 ) -> Cluster {
     let data_ingestion_path = tempfile::tempdir().unwrap().into_path();
     let db_url = graphql_connection_config.db_url.clone();
@@ -76,11 +79,14 @@ pub async fn start_cluster(
     .await;
 
     // Starts graphql server
+    let graphql_cancellation_token = CancellationToken::new();
+
     let fn_rpc_url = val_fn.rpc_url().to_string();
     let graphql_server_handle = start_graphql_server_with_fn_rpc(
         graphql_connection_config.clone(),
         Some(fn_rpc_url),
-        /* cancellation_token */ None,
+        /* cancellation_token */ Some(graphql_cancellation_token.child_token()),
+        service_config,
     )
     .await;
 
@@ -99,6 +105,8 @@ pub async fn start_cluster(
         indexer_join_handle: pg_handle,
         graphql_server_join_handle: graphql_server_handle,
         graphql_client: client,
+        graphql_cancellation_token,
+        graphql_connection_config
     }
 }
 
@@ -175,19 +183,25 @@ pub async fn start_graphql_server(
     graphql_connection_config: ConnectionConfig,
     cancellation_token: CancellationToken,
 ) -> JoinHandle<()> {
-    start_graphql_server_with_fn_rpc(graphql_connection_config, None, Some(cancellation_token))
-        .await
+    start_graphql_server_with_fn_rpc(
+        graphql_connection_config,
+        None,
+        Some(cancellation_token),
+        None,
+    )
+    .await
 }
 
 pub async fn start_graphql_server_with_fn_rpc(
     graphql_connection_config: ConnectionConfig,
     fn_rpc_url: Option<String>,
     cancellation_token: Option<CancellationToken>,
+    service_config: Option<ServiceConfig>,
 ) -> JoinHandle<()> {
     let cancellation_token = cancellation_token.unwrap_or_default();
     let mut server_config = ServerConfig {
         connection: graphql_connection_config,
-        service: ServiceConfig::test_defaults(),
+        service: service_config.unwrap_or(ServiceConfig::test_defaults()),
         ..ServerConfig::default()
     };
     if let Some(fn_rpc_url) = fn_rpc_url {
@@ -288,6 +302,22 @@ impl Cluster {
     /// service's background task to update the checkpoint watermark to the given checkpoint.
     pub async fn wait_for_checkpoint_catchup(&self, checkpoint: u64, base_timeout: Duration) {
         wait_for_graphql_checkpoint_catchup(&self.graphql_client, checkpoint, base_timeout).await
+    }
+
+    /// Restarts the graphql service, cancelling the previous instance and starting a new one.
+    pub async fn restart_graphql_service(&mut self, config: Option<ServiceConfig>) {
+        self.graphql_cancellation_token.cancel();
+        self.graphql_cancellation_token = CancellationToken::new();
+
+        self.graphql_server_join_handle = start_graphql_server_with_fn_rpc(
+            self.graphql_connection_config.clone(),
+            Some(self.validator_fullnode_handle.rpc_url().to_string()),
+            Some(self.graphql_cancellation_token.child_token()),
+            config,
+        )
+        .await;
+
+        wait_for_graphql_server(&self.graphql_client).await;
     }
 }
 

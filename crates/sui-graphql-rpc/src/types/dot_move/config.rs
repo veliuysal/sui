@@ -158,11 +158,11 @@ impl FromStr for VersionedName {
 /// An AppRecord entry in the DotMove service.
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub(crate) struct AppRecord {
-    pub id: ObjectID,
     pub app_cap_id: ID,
     pub app_info: Option<AppInfo>,
     pub networks: VecMap<String, AppInfo>,
     pub metadata: VecMap<String, String>,
+    pub storage: ObjectID,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
