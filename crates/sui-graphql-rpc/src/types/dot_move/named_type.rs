@@ -43,7 +43,7 @@ impl NamedType {
                 return Err(Error::DotMove(DotMoveServiceError::NameNotFound(name)));
             };
 
-            name_package_id_mapping.insert(name, package.move_package.native.id());
+            name_package_id_mapping.insert(name, package.native.id());
         }
 
         let correct_type_tag = Self::replace_names(name, &name_package_id_mapping);

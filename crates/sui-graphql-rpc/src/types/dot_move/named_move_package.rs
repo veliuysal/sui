@@ -1,12 +1,12 @@
 use std::str::FromStr;
 
-use async_graphql::{Context, SimpleObject};
+use async_graphql::Context;
 
 use crate::{
     error::Error,
     types::{
-        address::Address, chain_identifier::ChainIdentifier, move_object::MoveObject,
-        move_package::MovePackage, object::Object,
+        chain_identifier::ChainIdentifier, move_object::MoveObject, move_package::MovePackage,
+        object::Object,
     },
 };
 
@@ -17,18 +17,14 @@ use super::{
     data_loader::DotMoveDataLoader,
 };
 
-#[derive(SimpleObject)]
-pub(crate) struct NamedMovePackage {
-    pub package_info_id: Address,
-    pub move_package: MovePackage,
-}
+pub(crate) struct NamedMovePackage;
 
 impl NamedMovePackage {
     pub(crate) async fn query(
         ctx: &Context<'_>,
         name: &str,
         checkpoint_viewed_at: u64,
-    ) -> Result<Option<Self>, Error> {
+    ) -> Result<Option<MovePackage>, Error> {
         let config: &DotMoveConfig = ctx.data_unchecked();
         let versioned = VersionedName::from_str(name)?;
 
@@ -45,7 +41,7 @@ impl NamedMovePackage {
         config: &DotMoveConfig,
         versioned: VersionedName,
         checkpoint_viewed_at: u64,
-    ) -> Result<Option<Self>, Error> {
+    ) -> Result<Option<MovePackage>, Error> {
         if config.mainnet_api_url.is_none() {
             return Err(DotMoveServiceError::MainnetApiUrlUnavailable.into());
         }
@@ -78,7 +74,7 @@ impl NamedMovePackage {
         config: &DotMoveConfig,
         versioned: VersionedName,
         checkpoint_viewed_at: u64,
-    ) -> Result<Option<Self>, Error> {
+    ) -> Result<Option<MovePackage>, Error> {
         let Some(df) = MoveObject::query(
             ctx,
             versioned.name.to_dynamic_field_id(config).into(),
@@ -103,34 +99,19 @@ impl NamedMovePackage {
         app_info: AppInfo,
         version: Option<u64>,
         checkpoint_viewed_at: u64,
-    ) -> Result<Option<Self>, Error> {
+    ) -> Result<Option<MovePackage>, Error> {
         let Some(package_address) = app_info.package_address else {
             return Ok(None);
         };
 
-        let Some(package_info_id) = app_info.package_info_id else {
-            return Ok(None);
-        };
-
         // let's now find the package at a specified version (or latest)
-        let Some(package_at_version) = MovePackage::query(
+        MovePackage::query(
             ctx,
             package_address.into(),
             version.map_or(MovePackage::latest_at(checkpoint_viewed_at), |v| {
                 MovePackage::by_version(v, checkpoint_viewed_at)
             }),
         )
-        .await?
-        else {
-            return Ok(None);
-        };
-
-        Ok(Some(NamedMovePackage {
-            package_info_id: Address {
-                address: package_info_id.bytes.into(),
-                checkpoint_viewed_at,
-            },
-            move_package: package_at_version,
-        }))
+        .await
     }
 }
