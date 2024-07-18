@@ -503,7 +503,7 @@ impl Query {
         &self,
         ctx: &Context<'_>,
         name: String,
-    ) -> Result<Option<NamedMovePackage>> {
+    ) -> Result<Option<MovePackage>> {
         let Watermark { checkpoint, .. } = *ctx.data()?;
 
         NamedMovePackage::query(ctx, &name, checkpoint)
