@@ -106,7 +106,7 @@ pub async fn start_cluster(
         graphql_server_join_handle: graphql_server_handle,
         graphql_client: client,
         graphql_cancellation_token,
-        graphql_connection_config
+        graphql_connection_config,
     }
 }
 
@@ -305,6 +305,7 @@ impl Cluster {
     }
 
     /// Restarts the graphql service, cancelling the previous instance and starting a new one.
+    /// That helps us change the configuration of the graphql service in the middle of a test.
     pub async fn restart_graphql_service(&mut self, config: Option<ServiceConfig>) {
         self.graphql_cancellation_token.cancel();
         self.graphql_cancellation_token = CancellationToken::new();

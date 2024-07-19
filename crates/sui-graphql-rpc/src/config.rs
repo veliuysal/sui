@@ -7,9 +7,9 @@ use crate::{functional_group::FunctionalGroup, types::dot_move::config::DotMoveC
 use async_graphql::*;
 use fastcrypto_zkp::bn254::zk_login_api::ZkLoginEnv;
 use serde::{Deserialize, Serialize};
-use sui_types::base_types::{ObjectID, SuiAddress};
 use std::{collections::BTreeSet, fmt::Display, time::Duration};
 use sui_json_rpc::name_service::NameServiceConfig;
+use sui_types::base_types::{ObjectID, SuiAddress};
 // TODO: calculate proper cost limits
 
 /// These values are set to support TS SDK shim layer queries for json-rpc compatibility.
@@ -416,7 +416,12 @@ impl ServiceConfig {
         }
     }
 
-    pub fn dot_move_test_defaults(external: bool, endpoint: Option<String>, pkg_address: Option<SuiAddress>, object_id: Option<ObjectID>) -> Self {
+    pub fn dot_move_test_defaults(
+        external: bool,
+        endpoint: Option<String>,
+        pkg_address: Option<SuiAddress>,
+        object_id: Option<ObjectID>,
+    ) -> Self {
         Self {
             dot_move: DotMoveConfig {
                 resolution_type: if external {
@@ -427,7 +432,7 @@ impl ServiceConfig {
                 mainnet_api_url: endpoint,
                 package_address: pkg_address.unwrap_or_default(),
                 registry_id: object_id.unwrap_or(ObjectID::random()),
-                ..Default::default()
+                page_limit: 10,
             },
             ..Self::test_defaults()
         }

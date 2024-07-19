@@ -43,8 +43,6 @@ impl MainnetNamesLoader {
         for (index, name) in names.iter().enumerate() {
             let bcs_base64 = name.to_base64_string();
 
-            print!("{:#?}", name);
-
             // retain the mapping here (id to bcs representation, so we can pick the right response later on)
             mapping.insert(name.clone(), index);
 
@@ -60,8 +58,6 @@ impl MainnetNamesLoader {
 
         result.push_str("}} ");
         result.push_str(QUERY_FRAGMENT);
-
-        println!("{}", result);
 
         result
     }

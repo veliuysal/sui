@@ -27,12 +27,11 @@ impl NamedMovePackage {
     ) -> Result<Option<MovePackage>, Error> {
         let config: &DotMoveConfig = ctx.data_unchecked();
         let versioned = VersionedName::from_str(name)?;
-
         // Non-mainnet handling for name resolution (uses mainnet api to resolve names).
         if config.resolution_type == ResolutionType::Internal {
-            Self::query_external(ctx, config, versioned, checkpoint_viewed_at).await
-        } else {
             Self::query_internal(ctx, config, versioned, checkpoint_viewed_at).await
+        } else {
+            Self::query_external(ctx, config, versioned, checkpoint_viewed_at).await
         }
     }
 

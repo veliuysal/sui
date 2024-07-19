@@ -67,8 +67,8 @@ pub enum DotMoveServiceError {
     #[error("Dot Move: The name {0} was not found.")]
     NameNotFound(String),
 
-    #[error("Dot Move: Invalid version number: {0}")]
-    InvalidVersion(String),
+    #[error("Dot Move: Invalid version")]
+    InvalidVersion,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -124,34 +124,32 @@ impl FromStr for VersionedName {
     type Err = DotMoveServiceError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(caps) = VERSIONED_NAME_REG.captures(s) {
-            let Some(app_name) = caps.get(1).map(|x| x.as_str()) else {
-                return Err(DotMoveServiceError::InvalidName(s.to_string()));
-            };
-            let Some(org_name) = caps.get(2).map(|x| x.as_str()) else {
-                return Err(DotMoveServiceError::InvalidName(s.to_string()));
-            };
+        let Some(caps) = VERSIONED_NAME_REG.captures(s) else {
+            return Err(DotMoveServiceError::InvalidName(s.to_string()));
+        };
 
-            if (org_name.len() > MAX_LABEL_LENGTH) || (app_name.len() > MAX_LABEL_LENGTH) {
-                return Err(DotMoveServiceError::InvalidName(s.to_string()));
-            };
+        let Some(app_name) = caps.get(1).map(|x| x.as_str()) else {
+            return Err(DotMoveServiceError::InvalidName(s.to_string()));
+        };
 
-            let version = if let Some(v) = caps.get(3).map(|x| x.as_str()) {
-                Some(
-                    v.parse::<u64>()
-                        .map_err(|_| DotMoveServiceError::InvalidVersion(v.to_string()))?,
-                )
-            } else {
-                None
-            };
+        let Some(org_name) = caps.get(2).map(|x| x.as_str()) else {
+            return Err(DotMoveServiceError::InvalidName(s.to_string()));
+        };
 
-            Ok(Self {
-                version,
-                name: Name::new(app_name, org_name),
-            })
-        } else {
-            Err(DotMoveServiceError::InvalidName(s.to_string()))
-        }
+        if (org_name.len() > MAX_LABEL_LENGTH) || (app_name.len() > MAX_LABEL_LENGTH) {
+            return Err(DotMoveServiceError::InvalidName(s.to_string()));
+        };
+
+        let version: Option<u64> = caps
+            .get(3)
+            .map(|x| x.as_str().parse())
+            .transpose()
+            .map_err(|_| DotMoveServiceError::InvalidVersion)?;
+
+        Ok(Self {
+            version,
+            name: Name::new(app_name, org_name),
+        })
     }
 }
 

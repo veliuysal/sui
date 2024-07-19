@@ -14,10 +14,13 @@ pub struct VecMap<K, V> {
 
 impl<K: PartialEq, V> VecMap<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
-        self.contents
-            .iter()
-            .find(|entry| &entry.key == key)
-            .map(|entry| &entry.value)
+        self.contents.iter().find_map(|entry| {
+            if &entry.key == key {
+                Some(&entry.value)
+            } else {
+                None
+            }
+        })
     }
 }
 
