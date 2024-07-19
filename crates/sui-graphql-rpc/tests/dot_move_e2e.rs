@@ -15,6 +15,8 @@ mod tests {
     const DOT_MOVE_PKG: &str = "tests/dot_move/dot_move/";
     const DEMO_PKG: &str = "tests/dot_move/demo/";
 
+    const DEMO_TYPE: &str = "::demo::DemoType";
+
     #[tokio::test]
     #[serial]
     async fn test_dot_move_e2e() {
@@ -111,27 +113,18 @@ mod tests {
         println!("Validating dot move queries both internally and externally on version 1");
 
         let query = format!(
-            r#"{{ valid_latest: {}, valid_with_version: {}, invalid: {} }}"#,
+            r#"{{ valid_latest: {}, valid_with_version: {}, invalid: {}, type: {} }}"#,
             name_query(&name),
             name_query(&format!("{}{}", &name, "/v1")),
-            name_query(&format!("{}{}", &name, "/v2"))
+            name_query(&format!("{}{}", &name, "/v2")),
+            type_query(&format!(
+                "{}{}",
+                &demo_pkg_id_internal.to_string(),
+                DEMO_TYPE
+            ))
         );
+
         let resolution = execute_query_short(&internal_res_cluster, query.clone()).await;
-
-        // let resolution = execute_query_short(&internal_res_cluster, name_query(&name)).await;
-        // let same_resolution = execute_query_short(
-        //     &internal_res_cluster,
-        //     name_query(&format!("{}{}", &name, "/v1")),
-        // )
-        // .await;
-        // let invalid_version_resolution = execute_query_short(
-        //     &internal_res_cluster,
-        //     name_query(&format!("{}{}", &name, "/v2")),
-        // )
-        // .await;
-
-        println!("{:?}", query.clone());
-        println!("{:?}", resolution);
 
         assert_eq!(
             resolution["data"]["valid_latest"]["address"]
@@ -147,10 +140,21 @@ mod tests {
             demo_pkg_id_internal.to_string()
         );
 
+        assert_eq!(
+            resolution["data"]["type"]["layout"]["struct"]["type"]
+                .as_str()
+                .unwrap(),
+            format!("{}{}", demo_pkg_id_internal.to_string(), DEMO_TYPE)
+        );
+
         // v2 does not exist!
         assert!(resolution["data"]["invalid"].is_null());
 
-        let resolution2 = execute_query_short(&external_res_cluster, format!(r#"{{ {} }}"#, name_query(&name))).await;
+        let resolution2 = execute_query_short(
+            &external_res_cluster,
+            format!(r#"{{ {} }}"#, name_query(&name)),
+        )
+        .await;
 
         assert_eq!(
             resolution2["data"]["packageByName"]["address"]
@@ -316,16 +320,10 @@ mod tests {
     }
 
     fn name_query(name: &str) -> String {
-        format!(
-            r#"packageByName(name: "{}") {{ address, version }}"#,
-            name
-        )
+        format!(r#"packageByName(name: "{}") {{ address, version }}"#, name)
     }
 
     fn type_query(named_type: &str) -> String {
-        format!(
-            r#"typeByName(name: "{}") {{ layout }}"#,
-            named_type
-        )
+        format!(r#"typeByName(name: "{}") {{ layout }}"#, named_type)
     }
 }
