@@ -384,6 +384,14 @@ impl ConnectionConfig {
         }
     }
 
+    pub fn host(&self) -> String {
+        self.host.clone()
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     pub fn db_name(&self) -> String {
         self.db_url.split('/').last().unwrap().to_string()
     }

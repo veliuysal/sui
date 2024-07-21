@@ -240,7 +240,7 @@ async fn start_validator_with_fullnode(
 }
 
 /// Repeatedly ping the GraphQL server for 10s, until it responds
-async fn wait_for_graphql_server(client: &SimpleClient) {
+pub async fn wait_for_graphql_server(client: &SimpleClient) {
     tokio::time::timeout(Duration::from_secs(10), async {
         while client.ping().await.is_err() {
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -302,23 +302,6 @@ impl Cluster {
     /// service's background task to update the checkpoint watermark to the given checkpoint.
     pub async fn wait_for_checkpoint_catchup(&self, checkpoint: u64, base_timeout: Duration) {
         wait_for_graphql_checkpoint_catchup(&self.graphql_client, checkpoint, base_timeout).await
-    }
-
-    /// Restarts the graphql service, cancelling the previous instance and starting a new one.
-    /// That helps us change the configuration of the graphql service in the middle of a test.
-    pub async fn restart_graphql_service(&mut self, config: Option<ServiceConfig>) {
-        self.graphql_cancellation_token.cancel();
-        self.graphql_cancellation_token = CancellationToken::new();
-
-        self.graphql_server_join_handle = start_graphql_server_with_fn_rpc(
-            self.graphql_connection_config.clone(),
-            Some(self.validator_fullnode_handle.rpc_url().to_string()),
-            Some(self.graphql_cancellation_token.child_token()),
-            config,
-        )
-        .await;
-
-        wait_for_graphql_server(&self.graphql_client).await;
     }
 }
 
