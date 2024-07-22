@@ -47,13 +47,15 @@ pub struct ExecutorCluster {
 }
 
 pub struct Cluster {
+    pub network: NetworkCluster,
+    pub graphql_server_join_handle: JoinHandle<()>,
+    pub graphql_client: SimpleClient,
+}
+
+pub struct NetworkCluster {
     pub validator_fullnode_handle: TestCluster,
     pub indexer_store: PgIndexerStore<diesel::PgConnection>,
     pub indexer_join_handle: JoinHandle<Result<(), IndexerError>>,
-    pub graphql_server_join_handle: JoinHandle<()>,
-    pub graphql_client: SimpleClient,
-    pub graphql_cancellation_token: CancellationToken,
-    pub graphql_connection_config: ConnectionConfig,
 }
 
 /// Starts a validator, fullnode, indexer, and graphql service for testing.
@@ -62,26 +64,20 @@ pub async fn start_cluster(
     internal_data_source_rpc_port: Option<u16>,
     service_config: Option<ServiceConfig>,
 ) -> Cluster {
-    let data_ingestion_path = tempfile::tempdir().unwrap().into_path();
-    let db_url = graphql_connection_config.db_url.clone();
-    // Starts validator+fullnode
-    let val_fn =
-        start_validator_with_fullnode(internal_data_source_rpc_port, data_ingestion_path.clone())
-            .await;
-
-    // Starts indexer
-    let (pg_store, pg_handle) = start_test_indexer(
-        Some(db_url),
-        val_fn.rpc_url().to_string(),
-        ReaderWriterConfig::writer_mode(None),
-        data_ingestion_path,
+    let network_cluster = start_network_cluster(
+        graphql_connection_config.clone(),
+        internal_data_source_rpc_port,
     )
     .await;
 
     // Starts graphql server
     let graphql_cancellation_token = CancellationToken::new();
 
-    let fn_rpc_url = val_fn.rpc_url().to_string();
+    let fn_rpc_url = network_cluster
+        .validator_fullnode_handle
+        .rpc_url()
+        .to_string();
+
     let graphql_server_handle = start_graphql_server_with_fn_rpc(
         graphql_connection_config.clone(),
         Some(fn_rpc_url),
@@ -100,13 +96,40 @@ pub async fn start_cluster(
     wait_for_graphql_server(&client).await;
 
     Cluster {
+        network: network_cluster,
+        graphql_server_join_handle: graphql_server_handle,
+        graphql_client: client,
+    }
+}
+
+/// Starts a validator, fullnode, indexer (with gql ingestion). Re-using `gql's` ConnectionConfig for convenience.
+/// This does not start any GraphQl services, only the network cluster. You can start a graphql service
+/// calling `start_graphql_server`.
+pub async fn start_network_cluster(
+    graphql_connection_config: ConnectionConfig,
+    internal_data_source_rpc_port: Option<u16>,
+) -> NetworkCluster {
+    let data_ingestion_path = tempfile::tempdir().unwrap().into_path();
+    let db_url = graphql_connection_config.db_url.clone();
+
+    // Starts validator+fullnode
+    let val_fn =
+        start_validator_with_fullnode(internal_data_source_rpc_port, data_ingestion_path.clone())
+            .await;
+
+    // Starts indexer
+    let (pg_store, pg_handle) = start_test_indexer(
+        Some(db_url),
+        val_fn.rpc_url().to_string(),
+        ReaderWriterConfig::writer_mode(None),
+        data_ingestion_path,
+    )
+    .await;
+
+    NetworkCluster {
         validator_fullnode_handle: val_fn,
         indexer_store: pg_store,
         indexer_join_handle: pg_handle,
-        graphql_server_join_handle: graphql_server_handle,
-        graphql_client: client,
-        graphql_cancellation_token,
-        graphql_connection_config,
     }
 }
 
@@ -155,6 +178,7 @@ pub async fn serve_executor(
     let graphql_server_handle = start_graphql_server(
         graphql_connection_config.clone(),
         cancellation_token.clone(),
+        None,
     )
     .await;
 
@@ -182,12 +206,13 @@ pub async fn serve_executor(
 pub async fn start_graphql_server(
     graphql_connection_config: ConnectionConfig,
     cancellation_token: CancellationToken,
+    service_config: Option<ServiceConfig>,
 ) -> JoinHandle<()> {
     start_graphql_server_with_fn_rpc(
         graphql_connection_config,
         None,
         Some(cancellation_token),
-        None,
+        service_config,
     )
     .await
 }

@@ -1,7 +1,7 @@
 
 module demo::demo {
     
-    public struct DemoType has drop {}
+    public struct V1Type has drop {}
 
     public fun noop() {}
 }
