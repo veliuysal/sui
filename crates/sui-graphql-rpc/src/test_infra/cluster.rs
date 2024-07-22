@@ -70,10 +70,7 @@ pub async fn start_cluster(
     )
     .await;
 
-    // Starts graphql server
-    let graphql_cancellation_token = CancellationToken::new();
-
-    let fn_rpc_url = network_cluster
+    let fn_rpc_url: String = network_cluster
         .validator_fullnode_handle
         .rpc_url()
         .to_string();
@@ -81,7 +78,7 @@ pub async fn start_cluster(
     let graphql_server_handle = start_graphql_server_with_fn_rpc(
         graphql_connection_config.clone(),
         Some(fn_rpc_url),
-        /* cancellation_token */ Some(graphql_cancellation_token.child_token()),
+        /* cancellation_token */ None,
         service_config,
     )
     .await;
