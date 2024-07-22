@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use sui_indexer::schema::checkpoints;
 use tokio::sync::{watch, RwLock};
+use tokio::time::Interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -62,38 +63,11 @@ impl WatermarkTask {
         }
     }
 
-    // Fetch the chain identifier (once) from the database and cache it.
-    async fn get_and_cache_chain_identifier(&self) -> bool {
-        loop {
-            tokio::select! {
-                _ = self.cancel.cancelled() => {
-                    info!("Shutdown signal received, terminating attempt to get chain identifier");
-                    return false;
-                },
-                _ = tokio::time::sleep(self.sleep) => {
-                    // we only set the chain_identifier once.
-                    let chain = match ChainIdentifier::query(&self.db).await  {
-                        Ok(Some(chain)) => chain,
-                        Ok(None) => continue,
-                        Err(e) => {
-                            error!("{}", e);
-                            self.metrics.inc_errors(&[ServerError::new(e.to_string(), None)]);
-                            continue;
-                        }
-                    };
-
-                    let mut chain_id_lock = self.chain_identifier.0.write().await;
-                    *chain_id_lock = chain.into();
-                    return true;
-                }
-            }
-        }
-    }
-
     pub(crate) async fn run(&self) {
+        let mut interval = tokio::time::interval(self.sleep);
         // We start the task by first finding & setting the chain identifier
         // so that it can be used in all requests.
-        let cached = self.get_and_cache_chain_identifier().await;
+        let cached = self.get_and_cache_chain_identifier(&mut interval).await;
         // In case we received a cancel signal, we don't want to start the classic watermark task.
         if !cached {
             return;
@@ -105,7 +79,7 @@ impl WatermarkTask {
                     info!("Shutdown signal received, terminating watermark update task");
                     return;
                 },
-                _ = tokio::time::sleep(self.sleep) => {
+                _ = interval.tick() => {
                     let Watermark { checkpoint, epoch } = match Watermark::query(&self.db).await {
                         Ok(Some(watermark)) => watermark,
                         Ok(None) => continue,
@@ -142,6 +116,34 @@ impl WatermarkTask {
     /// Receiver for subscribing to epoch changes.
     pub(crate) fn epoch_receiver(&self) -> watch::Receiver<u64> {
         self.receiver.clone()
+    }
+
+    // Fetch the chain identifier (once) from the database and cache it.
+    async fn get_and_cache_chain_identifier(&self, interval: &mut Interval) -> bool {
+        loop {
+            tokio::select! {
+                _ = self.cancel.cancelled() => {
+                    info!("Shutdown signal received, terminating attempt to get chain identifier");
+                    return false;
+                },
+                _ = interval.tick() => {
+                    // we only set the chain_identifier once.
+                    let chain = match ChainIdentifier::query(&self.db).await  {
+                        Ok(Some(chain)) => chain,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            error!("{}", e);
+                            self.metrics.inc_errors(&[ServerError::new(e.to_string(), None)]);
+                            continue;
+                        }
+                    };
+
+                    let mut chain_id_lock = self.chain_identifier.0.write().await;
+                    *chain_id_lock = chain.into();
+                    return true;
+                }
+            }
+        }
     }
 }
 
