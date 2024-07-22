@@ -1,11 +1,10 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
-
 use crate::{
     data::{Db, DbConnection, QueryExecutor},
     error::Error,
+    server::watermark_task::ChainIdentifierLock,
 };
 use async_graphql::*;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
@@ -13,7 +12,6 @@ use sui_indexer::schema::checkpoints;
 use sui_types::{
     digests::ChainIdentifier as NativeChainIdentifier, messages_checkpoint::CheckpointDigest,
 };
-use tokio::sync::RwLock;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct ChainIdentifier(pub(crate) NativeChainIdentifier);
@@ -62,5 +60,3 @@ impl From<NativeChainIdentifier> for ChainIdentifier {
         Self(chain_identifier)
     }
 }
-#[derive(Clone, Default)]
-pub(crate) struct ChainIdentifierLock(pub(crate) Arc<RwLock<ChainIdentifier>>);

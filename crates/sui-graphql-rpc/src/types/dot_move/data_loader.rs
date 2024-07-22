@@ -14,14 +14,13 @@ use super::config::{AppRecord, DotMoveConfig, DotMoveServiceError, Name};
 const QUERY_FRAGMENT: &str =
     "fragment RECORD_VALUES on DynamicField { value { ... on MoveValue { bcs } } }";
 
-fn fetch_key(idx: &usize) -> String {
-    format!("fetch_{}", idx)
-}
-
 pub(crate) struct MainnetNamesLoader {
     client: reqwest::Client,
     config: DotMoveConfig,
 }
+/// Helper types for accessing a shared `DataLoader` instance.
+#[derive(Clone)]
+pub(crate) struct DotMoveDataLoader(pub Arc<DataLoader<MainnetNamesLoader>>);
 
 impl MainnetNamesLoader {
     pub(crate) fn new(config: &DotMoveConfig) -> Self {
@@ -63,12 +62,11 @@ impl MainnetNamesLoader {
     }
 }
 
-impl Default for MainnetNamesLoader {
-    fn default() -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            config: DotMoveConfig::default(),
-        }
+impl DotMoveDataLoader {
+    pub(crate) fn new(config: &DotMoveConfig) -> Self {
+        let data_loader = DataLoader::new(MainnetNamesLoader::new(config), tokio::spawn)
+            .max_batch_size(config.page_limit as usize);
+        Self(Arc::new(data_loader))
     }
 }
 
@@ -102,16 +100,24 @@ impl Loader<Name> for MainnetNamesLoader {
             .json(&request_body)
             .send()
             .await
-            .map_err(|_| Error::DotMove(DotMoveServiceError::FailedToQueryMainnetApi))?;
+            .map_err(|e| {
+                Error::DotMove(DotMoveServiceError::FailedToQueryMainnetApi(e.to_string()))
+            })?;
 
         if !res.status().is_success() {
-            return Err(Error::DotMove(DotMoveServiceError::FailedToQueryMainnetApi));
+            return Err(Error::DotMove(
+                DotMoveServiceError::FailedToQueryMainnetApi(format!(
+                    "Status code: {}",
+                    res.status()
+                )),
+            ));
         }
 
-        let response_json: GraphQLResponse<Owner> = res
-            .json()
-            .await
-            .map_err(|_| Error::DotMove(DotMoveServiceError::FailedToParseMainnetResponse))?;
+        let response_json: GraphQLResponse<Owner> = res.json().await.map_err(|e| {
+            Error::DotMove(DotMoveServiceError::FailedToParseMainnetResponse(
+                e.to_string(),
+            ))
+        })?;
 
         let names = response_json.data.owner.names;
 
@@ -139,19 +145,20 @@ impl Loader<Name> for MainnetNamesLoader {
     }
 }
 
-/// Helper types for accessing a shared `DataLoader` instance.
-#[derive(Clone)]
-pub(crate) struct DotMoveDataLoader(pub Arc<DataLoader<MainnetNamesLoader>>);
-
-impl DotMoveDataLoader {
-    pub(crate) fn new(config: &DotMoveConfig) -> Self {
-        let data_loader = DataLoader::new(MainnetNamesLoader::new(config), tokio::spawn)
-            .max_batch_size(config.page_limit as usize);
-        Self(Arc::new(data_loader))
+impl Default for MainnetNamesLoader {
+    fn default() -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            config: DotMoveConfig::default(),
+        }
     }
 }
 
-// GraphQL Request and Response types to deserialize.
+fn fetch_key(idx: &usize) -> String {
+    format!("f_{}", idx)
+}
+
+// GraphQL Request and Response types to deserialize for the data loader.
 #[derive(Serialize)]
 struct GraphQLRequest {
     query: String,

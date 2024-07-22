@@ -20,28 +20,101 @@ use crate::types::base64::Base64;
 
 const MAX_LABEL_LENGTH: usize = 63;
 
-const VERSIONED_NAME_UNBOUND_REGEX: &str =
-    r"([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:\/v(\d+))?";
+/// Regex to parse a dot move name. Version is optional (defaults to latest).
+/// For versioned format, the expected format is `app@org/v1`.
+/// For an unversioned format, the expected format is `app@org`.
+///
+/// The unbound regex can be used to search matches in a type tag.
+/// Use `VERSIONED_NAME_REGEX` for parsing a single name from a str.
+const VERSIONED_NAME_UNBOUND_REGEX: &str = concat!(
+    "([a-z0-9]+(?:-[a-z0-9]+)*)",
+    "@",
+    "([a-z0-9]+(?:-[a-z0-9]+)*)",
+    r"(?:\/v(\d+))?"
+);
 
-// Versioned name regex is much more strict, as it accepts a versioned OR unversioned name.
-// This name has to be in the format `app@org/v1`.
-// The version is optional, and if it is not present, we default to the latest version.
-// The version is a number, and it has to be a positive integer.
-// The name and org parts can only be lower case, numbers, and dashes, while dashes cannot be
-// at the beginning or end of the name, nor can there be continuous dashes.
-const VERSIONED_NAME_REGEX: &str =
-    r"^([a-z0-9]+(?:-[a-z0-9]+)*)@([a-z0-9]+(?:-[a-z0-9]+)*)(?:\/v(\d+))?$";
+/// Regex to parse a dot move name. Version is optional (defaults to latest).
+/// For versioned format, the expected format is `app@org/v1`.
+/// For an unversioned format, the expected format is `app@org`.
+///
+/// This regex is used to parse a single name (does not do type_tag matching).
+/// Use `VERSIONED_NAME_UNBOUND_REGEX` for type tag matching.
+const VERSIONED_NAME_REGEX: &str = concat!(
+    "^",
+    "([a-z0-9]+(?:-[a-z0-9]+)*)",
+    "@",
+    "([a-z0-9]+(?:-[a-z0-9]+)*)",
+    r"(?:\/v(\d+))?",
+    "$"
+);
 
-// A regular expression that catches all possible dot move names in a type tag.
+// Config / constants of the service.
+
+const DOT_MOVE_MODULE: &IdentStr = ident_str!("name");
+const DOT_MOVE_TYPE: &IdentStr = ident_str!("Name");
+const DOT_MOVE_PACKAGE: &str = "0x1a841abe817c38221596856bc975b3b84f2f68692191e9247e185213d3d02fd8";
+const DOT_MOVE_REGISTRY: &str =
+    "0x250b60446b8e7b8d9d7251600a7228dbfda84ccb4b23a56a700d833e221fae4f";
+const DEFAULT_PAGE_LIMIT: u16 = 50;
+
+/// A regular expression that detects all possible dot move names in a type tag.
 pub(crate) static VERSIONED_NAME_UNBOUND_REG: Lazy<Regex> =
     Lazy::new(|| Regex::new(VERSIONED_NAME_UNBOUND_REGEX).unwrap());
 
-// A regular expression that catches a name in the format `app@org/v1`.
-// This regex is used to parse the name and version from the type tag.
-// This has a bound (needs to start and end with this format) compared to the unbound regex,
-// which is used to parse all names from a type tag.
+/// A regular expression that detects a single name in the format `app@org/v1`.
 pub(crate) static VERSIONED_NAME_REG: Lazy<Regex> =
     Lazy::new(|| Regex::new(VERSIONED_NAME_REGEX).unwrap());
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct DotMoveConfig {
+    pub(crate) mainnet_api_url: Option<String>,
+    #[serde(default = "default_resolution_type")]
+    pub(crate) resolution_type: ResolutionType,
+    #[serde(default = "default_page_limit")]
+    pub(crate) page_limit: u16,
+    #[serde(default = "default_package_address")]
+    pub(crate) package_address: SuiAddress,
+    #[serde(default = "default_registry_id")]
+    pub(crate) registry_id: ObjectID,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct VersionedName {
+    /// A version name defaults at None, which means we need the latest version.
+    pub version: Option<u64>,
+    /// The on-chain `Name` object that represents the dot_move name.
+    pub name: Name,
+}
+
+/// Attention: The format of this struct should not change unless the on-chain format changes,
+/// as we define it to deserialize on-chain data.
+#[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq)]
+pub(crate) struct Name {
+    pub labels: Vec<String>,
+    pub normalized: String,
+}
+
+/// An AppRecord entry in the DotMove service.
+/// Attention: The format of this struct should not change unless the on-chain format changes,
+/// as we define it to deserialize on-chain data.
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub(crate) struct AppRecord {
+    pub app_cap_id: ID,
+    pub app_info: Option<AppInfo>,
+    pub networks: VecMap<String, AppInfo>,
+    pub metadata: VecMap<String, String>,
+    pub storage: ObjectID,
+}
+
+/// Attention: The format of this struct should not change unless the on-chain format changes,
+/// as we define it to deserialize on-chain data.
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub(crate) struct AppInfo {
+    pub package_info_id: Option<ID>,
+    pub package_address: Option<SuiAddress>,
+    pub upgrade_cap_id: Option<ID>,
+}
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum DotMoveServiceError {
@@ -55,11 +128,11 @@ pub enum DotMoveServiceError {
     #[error("Dot Move: Mainnet API url is not available so resolution is not on this RPC.")]
     MainnetApiUrlUnavailable,
 
-    #[error("Dot Move Internal Error: Failed to query mainnet API due to an internal error.")]
-    FailedToQueryMainnetApi,
+    #[error("Dot Move Internal Error: Failed to query mainnet API due to an internal error: {0}")]
+    FailedToQueryMainnetApi(String),
 
-    #[error("Dot Move Internal Error: Failed to parse mainnet's API response.")]
-    FailedToParseMainnetResponse,
+    #[error("Dot Move Internal Error: Failed to parse mainnet's API response: {0}")]
+    FailedToParseMainnetResponse(String),
 
     #[error("Dot Move Internal Error: Failed to deserialize DotMove record ${0}.")]
     FailedToDeserializeDotMoveRecord(ObjectID),
@@ -71,17 +144,10 @@ pub enum DotMoveServiceError {
     InvalidVersion,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub struct VersionedName {
-    /// A version name defaults at None, which means we need the latest version.
-    pub version: Option<u64>,
-    pub name: Name,
-}
-
-#[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq)]
-pub(crate) struct Name {
-    pub labels: Vec<String>,
-    pub normalized: String,
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub(crate) enum ResolutionType {
+    Internal,
+    External,
 }
 
 impl Name {
@@ -108,6 +174,7 @@ impl Name {
         Base64::from(self.to_bytes()).to_value().to_string()
     }
 
+    /// Generate the ObjectID for a given `Name`
     pub fn to_dynamic_field_id(&self, config: &DotMoveConfig) -> ObjectID {
         let domain_type_tag = Self::type_(config.package_address);
 
@@ -117,6 +184,35 @@ impl Name {
             &self.to_bytes(),
         )
         .unwrap()
+    }
+}
+
+impl DotMoveConfig {
+    pub(crate) fn new(
+        resolution_type: ResolutionType,
+        mainnet_api_url: Option<String>,
+        page_limit: u16,
+        package_address: SuiAddress,
+        registry_id: ObjectID,
+    ) -> Self {
+        Self {
+            resolution_type,
+            mainnet_api_url,
+            page_limit,
+            package_address,
+            registry_id,
+        }
+    }
+}
+
+impl TryFrom<NativeMoveObject> for AppRecord {
+    type Error = DotMoveServiceError;
+
+    fn try_from(object: NativeMoveObject) -> Result<Self, DotMoveServiceError> {
+        object
+            .to_rust::<Field<Name, Self>>()
+            .map(|record| record.value)
+            .ok_or_else(|| DotMoveServiceError::FailedToDeserializeDotMoveRecord(object.id()))
     }
 }
 
@@ -153,78 +249,17 @@ impl FromStr for VersionedName {
     }
 }
 
-/// An AppRecord entry in the DotMove service.
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub(crate) struct AppRecord {
-    pub app_cap_id: ID,
-    pub app_info: Option<AppInfo>,
-    pub networks: VecMap<String, AppInfo>,
-    pub metadata: VecMap<String, String>,
-    pub storage: ObjectID,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub(crate) struct AppInfo {
-    pub package_info_id: Option<ID>,
-    pub package_address: Option<SuiAddress>,
-    pub upgrade_cap_id: Option<ID>,
-}
-
-impl TryFrom<NativeMoveObject> for AppRecord {
-    type Error = DotMoveServiceError;
-
-    fn try_from(object: NativeMoveObject) -> Result<Self, DotMoveServiceError> {
-        object
-            .to_rust::<Field<Name, Self>>()
-            .map(|record| record.value)
-            .ok_or_else(|| DotMoveServiceError::FailedToDeserializeDotMoveRecord(object.id()))
-    }
-}
-
-// Config / constants of the service.
-
-const DOT_MOVE_MODULE: &IdentStr = ident_str!("name");
-const DOT_MOVE_TYPE: &IdentStr = ident_str!("Name");
-const DOT_MOVE_PACKAGE: &str = "0x1a841abe817c38221596856bc975b3b84f2f68692191e9247e185213d3d02fd8";
-const DOT_MOVE_REGISTRY: &str =
-    "0x250b60446b8e7b8d9d7251600a7228dbfda84ccb4b23a56a700d833e221fae4f";
-const DEFAULT_PAGE_LIMIT: u16 = 50;
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub(crate) enum ResolutionType {
-    Internal,
-    External,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct DotMoveConfig {
-    pub(crate) mainnet_api_url: Option<String>,
-    #[serde(default = "default_resolution_type")]
-    pub(crate) resolution_type: ResolutionType,
-    #[serde(default = "default_page_limit")]
-    pub(crate) page_limit: u16,
-    #[serde(default = "default_package_address")]
-    pub(crate) package_address: SuiAddress,
-    #[serde(default = "default_registry_id")]
-    pub(crate) registry_id: ObjectID,
-}
-
-impl DotMoveConfig {
-    pub(crate) fn new(
-        resolution_type: ResolutionType,
-        mainnet_api_url: Option<String>,
-        page_limit: u16,
-        package_address: SuiAddress,
-        registry_id: ObjectID,
-    ) -> Self {
-        Self {
-            resolution_type,
-            mainnet_api_url,
-            page_limit,
-            package_address,
-            registry_id,
-        }
+// TODO: Keeping the values as is, because we'll remove the default getters
+// when we refactor to use `[GraphqlConfig]` macro.
+impl Default for DotMoveConfig {
+    fn default() -> Self {
+        Self::new(
+            ResolutionType::Internal,
+            None,
+            DEFAULT_PAGE_LIMIT,
+            SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap(),
+            ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap(),
+        )
     }
 }
 
@@ -242,20 +277,6 @@ fn default_registry_id() -> ObjectID {
 
 fn default_page_limit() -> u16 {
     DEFAULT_PAGE_LIMIT
-}
-
-// TODO: Keeping the values as is, because we'll remove the default getters
-// when we refactor to use `[GraphqlConfig]` macro.
-impl Default for DotMoveConfig {
-    fn default() -> Self {
-        Self::new(
-            ResolutionType::Internal,
-            None,
-            DEFAULT_PAGE_LIMIT,
-            SuiAddress::from_str(DOT_MOVE_PACKAGE).unwrap(),
-            ObjectID::from_str(DOT_MOVE_REGISTRY).unwrap(),
-        )
-    }
 }
 
 #[cfg(test)]

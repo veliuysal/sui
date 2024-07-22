@@ -4,7 +4,7 @@
 use crate::data::{Db, DbConnection, QueryExecutor};
 use crate::error::Error;
 use crate::metrics::Metrics;
-use crate::types::chain_identifier::{ChainIdentifier, ChainIdentifierLock};
+use crate::types::chain_identifier::ChainIdentifier;
 use async_graphql::ServerError;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use std::mem;
@@ -28,6 +28,8 @@ pub(crate) struct WatermarkTask {
     sender: watch::Sender<u64>,
     receiver: watch::Receiver<u64>,
 }
+#[derive(Clone, Default)]
+pub(crate) struct ChainIdentifierLock(pub(crate) Arc<RwLock<ChainIdentifier>>);
 
 pub(crate) type WatermarkLock = Arc<RwLock<Watermark>>;
 

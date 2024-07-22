@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::system_package_task::SystemPackageTask;
-use super::watermark_task::{Watermark, WatermarkLock, WatermarkTask};
+use super::watermark_task::{ChainIdentifierLock, Watermark, WatermarkLock, WatermarkTask};
 use crate::config::{
     ConnectionConfig, ServiceConfig, Version, MAX_CONCURRENT_REQUESTS,
     RPC_TIMEOUT_ERR_SLEEP_RETRY_PERIOD,
@@ -11,7 +11,7 @@ use crate::data::package_resolver::{DbPackageStore, PackageResolver};
 use crate::data::{DataLoader, Db};
 use crate::metrics::Metrics;
 use crate::mutation::Mutation;
-use crate::types::chain_identifier::{ChainIdentifier, ChainIdentifierLock};
+use crate::types::chain_identifier::ChainIdentifier;
 use crate::types::dot_move::data_loader::DotMoveDataLoader;
 use crate::types::move_object::IMoveObject;
 use crate::types::object::IObject;

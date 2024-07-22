@@ -137,7 +137,7 @@ mod tests {
         test_resolved_types(internal_resolution, &v1, &v2, &v3);
         test_resolved_types(external_resolution, &v1, &v2, &v3);
 
-        println!("Tests are finished successfully now!");
+        println!("Tests have finished successfully now!");
     }
 
     fn test_resolved_types(
@@ -254,23 +254,6 @@ mod tests {
         execute_tx(cluster, tx).await;
 
         println!("Added record successfully: {:?}", (name, chain_id));
-    }
-
-    async fn execute_tx(
-        cluster: &sui_graphql_rpc::test_infra::cluster::NetworkCluster,
-        tx: TransactionData,
-    ) -> SuiTransactionBlockResponse {
-        let sig = cluster
-            .validator_fullnode_handle
-            .wallet
-            .sign_transaction(&tx);
-
-        let executed = cluster
-            .validator_fullnode_handle
-            .execute_transaction(sig)
-            .await;
-
-        executed
     }
 
     // Publishes the Demo PKG, upgrades it twice and returns v1, v2 and v3 package ids.
@@ -487,5 +470,22 @@ mod tests {
 
     fn type_query(named_type: &str) -> String {
         format!(r#"typeByName(name: "{}") {{ layout }}"#, named_type)
+    }
+
+    async fn execute_tx(
+        cluster: &sui_graphql_rpc::test_infra::cluster::NetworkCluster,
+        tx: TransactionData,
+    ) -> SuiTransactionBlockResponse {
+        let sig = cluster
+            .validator_fullnode_handle
+            .wallet
+            .sign_transaction(&tx);
+
+        let executed = cluster
+            .validator_fullnode_handle
+            .execute_transaction(sig)
+            .await;
+
+        executed
     }
 }
