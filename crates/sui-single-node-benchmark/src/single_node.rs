@@ -94,7 +94,7 @@ impl SingleValidator {
         &self,
         publish_data: PublishData,
         sender: SuiAddress,
-        keypair: &AccountKeyPair,
+        keypair: &KeyPair,
         gas: ObjectRef,
     ) -> (ObjectRef, ObjectRef) {
         let tx_builder = TestTransactionBuilder::new(sender, gas, DEFAULT_VALIDATOR_GAS_PRICE)

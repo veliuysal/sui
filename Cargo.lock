@@ -13926,6 +13926,8 @@ dependencies = [
  "async-trait",
  "bcs",
  "clap",
+ "fastcrypto",
+ "fastcrypto-zkp",
  "fs_extra",
  "futures",
  "move-binary-format",
