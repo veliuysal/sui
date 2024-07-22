@@ -12,12 +12,12 @@ use sui_sdk::SuiClient;
 use sui_types::transaction::{TransactionData, TransactionKind};
 use sui_types::{gas_coin::GAS, transaction::TransactionDataAPI, TypeTag};
 
+use super::chain_identifier::ChainIdentifier;
 use super::move_package::{self, MovePackage};
 use super::suins_registration::NameService;
 use super::{
     address::Address,
     available_range::AvailableRange,
-    chain_identifier::ChainIdentifier,
     checkpoint::{self, Checkpoint, CheckpointId},
     coin::Coin,
     coin_metadata::CoinMetadata,
@@ -51,10 +51,8 @@ impl Query {
     /// First four bytes of the network's genesis checkpoint digest (uniquely identifies the
     /// network).
     async fn chain_identifier(&self, ctx: &Context<'_>) -> Result<String> {
-        Ok(ChainIdentifier::query(ctx.data_unchecked())
-            .await
-            .extend()?
-            .to_string())
+        let chain_id: ChainIdentifier = *ctx.data()?;
+        Ok(chain_id.0.to_string())
     }
 
     /// Range of checkpoints that the RPC has data available for (for data
