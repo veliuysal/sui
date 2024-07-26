@@ -16,7 +16,7 @@ use tracing::{info, warn};
 
 /// The minimum and maximum protocol versions supported by this build.
 const MIN_PROTOCOL_VERSION: u64 = 1;
-const MAX_PROTOCOL_VERSION: u64 = 53;
+const MAX_PROTOCOL_VERSION: u64 = 54;
 
 // Record history of protocol version allocations here:
 //
@@ -164,6 +164,7 @@ const MAX_PROTOCOL_VERSION: u64 = 53;
 // Version 53: Add feature flag to decide whether to attempt to finalize bridge committee
 //             Enable consensus commit prologue V3 on testnet.
 //             Turn on shared object congestion control in testnet.
+// Version 54: Add support for session based passkey in devnet.
 
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProtocolVersion(u64);
@@ -502,6 +503,10 @@ struct FeatureFlags {
     // Use AuthorityCapabilitiesV2
     #[serde(skip_serializing_if = "is_false")]
     authority_capabilities_v2: bool,
+
+    // Enable passkey session auth (SIP-todo)
+    #[serde(skip_serializing_if = "is_false")]
+    passkey_session_auth: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1486,6 +1491,10 @@ impl ProtocolConfig {
 
     pub fn passkey_auth(&self) -> bool {
         self.feature_flags.passkey_auth
+    }
+
+    pub fn passkey_session_auth(&self) -> bool {
+        self.feature_flags.passkey_session_auth
     }
 
     pub fn authority_capabilities_v2(&self) -> bool {
@@ -2535,6 +2544,11 @@ impl ProtocolConfig {
                         cfg.max_accumulated_txn_cost_per_object_in_mysticeti_commit = Some(10);
                         cfg.feature_flags.per_object_congestion_control_mode =
                             PerObjectCongestionControlMode::TotalTxCount;
+                    }
+                }
+                54 => {
+                    if chain != Chain::Testnet && chain != Chain::Mainnet {
+                        cfg.feature_flags.passkey_session_auth = true;
                     }
                 }
                 // Use this template when making changes:
