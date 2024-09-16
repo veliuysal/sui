@@ -818,10 +818,12 @@ impl ConsensusAdapter {
                     .observe(ack_start.elapsed().as_secs_f64());
             };
             match select(processed_waiter, submit_inner.boxed()).await {
-                Either::Left((processed, _submit_inner)) => processed,
+                Either::Left((_processed, _submit_inner)) => (),
                 Either::Right(((), processed_waiter)) => {
                     debug!("Submitted {transaction_keys:?} to consensus");
-                    processed_waiter.await
+                    // if tx has been processed by checkpoint state sync, then exclude from the latency calculations as this can
+                    // introduce to misleading results.
+                    guard.exclude_from_latency_observe = !processed_waiter.await;
                 }
             }
         }
@@ -876,11 +878,12 @@ impl ConsensusAdapter {
     }
 
     /// Waits for transactions to appear either to consensus output or been executed via a checkpoint (state sync).
+    /// Returns true if all transactions have been processed via consensus, false otherwise (if have been synced via checkpoint)
     async fn await_consensus_or_checkpoint(
         self: &Arc<Self>,
         transaction_keys: Vec<SequencedConsensusTransactionKey>,
         epoch_store: &Arc<AuthorityPerEpochStore>,
-    ) {
+    ) -> bool {
         let notifications = FuturesUnordered::new();
         for transaction_key in transaction_keys {
             let transaction_digests = if let SequencedConsensusTransactionKey::External(
@@ -911,6 +914,7 @@ impl ConsensusAdapter {
                     processed = epoch_store.consensus_messages_processed_notify(vec![transaction_key]) => {
                         processed.expect("Storage error when waiting for consensus message processed");
                         self.metrics.sequencing_certificate_processed.with_label_values(&["consensus"]).inc();
+                        return true;
                     },
                     processed = epoch_store.transactions_executed_in_checkpoint_notify(transaction_digests), if !transaction_digests.is_empty() => {
                         processed.expect("Storage error when waiting for transaction executed in checkpoint");
@@ -921,10 +925,12 @@ impl ConsensusAdapter {
                         self.metrics.sequencing_certificate_processed.with_label_values(&["synced_checkpoint"]).inc();
                     }
                 }
+                false
             });
         }
 
-        notifications.collect::<Vec<()>>().await;
+        let synced_via_consensus = notifications.collect::<Vec<bool>>().await;
+        synced_via_consensus.into_iter().all(|x| x)
     }
 }
 
@@ -1050,6 +1056,7 @@ struct InflightDropGuard<'a> {
     positions_moved: Option<usize>,
     preceding_disconnected: Option<usize>,
     tx_type: &'static str,
+    exclude_from_latency_observe: bool,
 }
 
 impl<'a> InflightDropGuard<'a> {
@@ -1074,6 +1081,7 @@ impl<'a> InflightDropGuard<'a> {
             positions_moved: None,
             preceding_disconnected: None,
             tx_type,
+            exclude_from_latency_observe: false,
         }
     }
 }
@@ -1131,7 +1139,7 @@ impl<'a> Drop for InflightDropGuard<'a> {
                 self.tx_type,
                 "shared_certificate" | "owned_certificate" | "checkpoint_signature" | "soft_bundle"
             );
-            if sampled {
+            if sampled && !self.exclude_from_latency_observe {
                 self.adapter.latency_observer.report(latency);
             }
         }
