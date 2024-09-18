@@ -11,7 +11,7 @@ use move_vm_types::{
     values::{GlobalValue, StructRef, Value},
 };
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::{btree_map, BTreeMap, BTreeSet},
     sync::Arc,
 };
 use sui_protocol_config::{check_limit_by_meter, LimitThresholdCrossed, ProtocolConfig};
@@ -708,6 +708,13 @@ impl<'a> ChildObjectStore<'a> {
 
     pub(super) fn wrapped_object_containers(&self) -> &BTreeMap<ObjectID, ObjectID> {
         &self.inner.wrapped_object_containers
+    }
+
+    pub(super) fn accessed_configs(&self) -> BTreeSet<ObjectID> {
+        self.config_setting_cache
+            .values()
+            .map(|setting| setting.config)
+            .collect()
     }
 
     // retrieve the `Op` effects for the child objects

@@ -1,6 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+mod config_store;
 pub mod error;
 mod object_store_trait;
 mod read_store;
@@ -18,6 +19,7 @@ use crate::{
     error::SuiResult,
     object::Object,
 };
+pub use config_store::ConfigStore;
 use itertools::Itertools;
 use move_binary_format::CompiledModule;
 use move_core_types::language_storage::ModuleId;
@@ -32,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 pub use shared_in_memory_store::SharedInMemoryStore;
 pub use shared_in_memory_store::SingleCheckpointSharedInMemoryStore;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 pub use write_store::WriteStore;
@@ -117,6 +119,8 @@ pub enum MarkerValue {
     /// A shared object was deleted by the transaction and is no longer able to be accessed or
     /// used in subsequent transactions.
     SharedDeleted(TransactionDigest),
+    /// A config object was updated at the given version in the current epoch.
+    ConfigUpdate(SequenceNumber),
 }
 
 /// DeleteKind together with the old sequence number prior to the deletion, if available.
@@ -214,6 +218,8 @@ pub trait Storage {
         &mut self,
         wrapped_object_containers: BTreeMap<ObjectID, ObjectID>,
     );
+
+    fn save_accessed_config_objects(&mut self, accessed_config_objects: BTreeSet<ObjectID>);
 
     /// Check coin denylist during execution,
     /// and the number of non-gas-coin owners.
@@ -588,7 +594,7 @@ impl Display for DeleteKind {
 }
 
 pub trait BackingStore:
-    BackingPackageStore + ChildObjectResolver + ObjectStore + ParentSync
+    BackingPackageStore + ChildObjectResolver + ObjectStore + ParentSync + ConfigStore
 {
     fn as_object_store(&self) -> &dyn ObjectStore;
 }
@@ -599,6 +605,7 @@ where
     T: ChildObjectResolver,
     T: ObjectStore,
     T: ParentSync,
+    T: ConfigStore,
 {
     fn as_object_store(&self) -> &dyn ObjectStore {
         self

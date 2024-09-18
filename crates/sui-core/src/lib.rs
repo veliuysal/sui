@@ -46,6 +46,9 @@ pub mod validator_tx_finalizer;
 pub mod verify_indexes;
 
 #[cfg(test)]
+#[path = "unit_tests/config_tests.rs"]
+mod config_tests;
+#[cfg(test)]
 #[path = "unit_tests/congestion_control_tests.rs"]
 mod congestion_control_tests;
 #[cfg(test)]

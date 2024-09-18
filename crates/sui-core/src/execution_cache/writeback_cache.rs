@@ -60,7 +60,9 @@ use std::sync::Arc;
 use sui_macros::fail_point_async;
 use sui_protocol_config::ProtocolVersion;
 use sui_types::accumulator::Accumulator;
-use sui_types::base_types::{EpochId, ObjectID, ObjectRef, SequenceNumber, VerifiedExecutionData};
+use sui_types::base_types::{
+    EpochId, ObjectID, ObjectRef, SequenceNumber, VerifiedExecutionData, VersionNumber,
+};
 use sui_types::bridge::{get_bridge, Bridge};
 use sui_types::digests::{
     ObjectDigest, TransactionDigest, TransactionEffectsDigest, TransactionEventsDigest,
@@ -1623,6 +1625,27 @@ impl ObjectCacheRead for WritebackCache {
 
     fn get_highest_pruned_checkpoint(&self) -> SuiResult<CheckpointSequenceNumber> {
         self.store.perpetual_tables.get_highest_pruned_checkpoint()
+    }
+
+    fn get_current_epoch_stable_sequence_number(
+        &self,
+        object_id: &ObjectID,
+        epoch_id: EpochId,
+    ) -> SuiResult<Option<VersionNumber>> {
+        // Read object first to get the latest version before checking the marker table. This
+        // ensures that we don't run into read-after-write type concurrency issues.
+        let object = ObjectCacheRead::get_object(self, object_id);
+        Ok(
+            match self.get_marker_value(object_id, SequenceNumber::new(), epoch_id)? {
+                Some(MarkerValue::ConfigUpdate(seqno)) => Some(seqno),
+                Some(
+                    MarkerValue::Received
+                    | MarkerValue::OwnedDeleted
+                    | MarkerValue::SharedDeleted(_),
+                )
+                | None => object?.map(|o| o.version()),
+            },
+        )
     }
 }
 

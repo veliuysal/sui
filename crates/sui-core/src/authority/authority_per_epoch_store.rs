@@ -1040,27 +1040,53 @@ impl AuthorityPerEpochStore {
         )
     }
 
-    pub fn new_at_next_epoch_for_testing(
+    #[cfg(any(test, feature = "test-utils"))]
+    pub async fn new_at_next_epoch_for_testing(
         &self,
-        backing_package_store: Arc<dyn BackingPackageStore + Send + Sync>,
-        object_store: Arc<dyn ObjectStore + Send + Sync>,
-        expensive_safety_check_config: &ExpensiveSafetyCheckConfig,
+        authority: &Arc<super::AuthorityState>,
     ) -> Arc<Self> {
+        use crate::mock_consensus;
+        use sui_network::randomness;
+
         let next_epoch = self.epoch() + 1;
         let next_committee = Committee::new(
             next_epoch,
             self.committee.voting_rights.iter().cloned().collect(),
         );
-        self.new_at_next_epoch(
+        let new_epoch = self.new_at_next_epoch(
             self.name,
             next_committee,
             self.epoch_start_configuration
                 .new_at_next_epoch_for_testing(),
-            backing_package_store,
-            object_store,
-            expensive_safety_check_config,
+            authority.get_backing_package_store().clone(),
+            authority.get_object_store().clone(),
+            &authority.config.expensive_safety_check_config,
             self.chain_identifier,
+        );
+
+        // Set up randomness manager for the next epoch if randomness is enabled.
+        if self.randomness_state_enabled() {
+            let consensus_client = Box::new(mock_consensus::MockConsensusClient::new(
+                Arc::downgrade(authority),
+                mock_consensus::ConsensusMode::Noop,
+            ));
+            let randomness_manager = RandomnessManager::try_new(
+                Arc::downgrade(&new_epoch),
+                consensus_client,
+                randomness::Handle::new_stub(),
+                authority.config.protocol_key_pair(),
         )
+            .await;
+            if let Some(randomness_manager) = randomness_manager {
+                // Randomness might fail if test configuration does not permit DKG init.
+                // In that case, skip setting it up.
+                new_epoch
+                    .set_randomness_manager(randomness_manager)
+                    .await
+                    .unwrap();
+            }
+        }
+        new_epoch
     }
 
     pub fn committee(&self) -> &Arc<Committee> {

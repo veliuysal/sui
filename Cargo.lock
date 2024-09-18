@@ -13266,6 +13266,7 @@ dependencies = [
  "futures",
  "indexmap 2.2.6",
  "insta",
+ "itertools 0.13.0",
  "jsonrpsee",
  "move-binary-format",
  "move-core-types",

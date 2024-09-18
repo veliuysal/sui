@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::Arc;
 use sui_config::ExecutionCacheConfig;
 use sui_protocol_config::ProtocolVersion;
-use sui_types::base_types::VerifiedExecutionData;
+use sui_types::base_types::{VerifiedExecutionData, VersionNumber};
 use sui_types::digests::{TransactionDigest, TransactionEffectsDigest, TransactionEventsDigest};
 use sui_types::effects::{TransactionEffects, TransactionEvents};
 use sui_types::error::{SuiError, SuiResult, UserInputError};
@@ -25,7 +25,7 @@ use sui_types::messages_checkpoint::CheckpointSequenceNumber;
 use sui_types::object::Object;
 use sui_types::storage::{
     error::{Error as StorageError, Result as StorageResult},
-    BackingPackageStore, BackingStore, ChildObjectResolver, MarkerValue, ObjectKey,
+    BackingPackageStore, BackingStore, ChildObjectResolver, ConfigStore, MarkerValue, ObjectKey,
     ObjectOrTombstone, ObjectStore, PackageObject, ParentSync,
 };
 use sui_types::sui_system_state::SuiSystemState;
@@ -200,6 +200,12 @@ pub trait ObjectCacheRead: Send + Sync {
     fn force_reload_system_packages(&self, system_package_ids: &[ObjectID]);
 
     fn get_object(&self, id: &ObjectID) -> SuiResult<Option<Object>>;
+
+    fn get_current_epoch_stable_sequence_number(
+        &self,
+        object_id: &ObjectID,
+        epoch_id: EpochId,
+    ) -> SuiResult<Option<VersionNumber>>;
 
     fn get_objects(&self, objects: &[ObjectID]) -> SuiResult<Vec<Option<Object>>> {
         let mut ret = Vec::with_capacity(objects.len());
@@ -416,6 +422,19 @@ pub trait ObjectCacheRead: Send + Sync {
         }
     }
 
+    /// If the config object was updated, return the first sequence number it was modified at in the
+    /// given epoch.
+    fn get_last_config_object_change_sequence_number(
+        &self,
+        object_id: &ObjectID,
+        epoch_id: EpochId,
+    ) -> SuiResult<Option<SequenceNumber>> {
+        match self.get_marker_value(object_id, SequenceNumber::new(), epoch_id)? {
+            Some(MarkerValue::ConfigUpdate(version)) => Ok(Some(version)),
+            _ => Ok(None),
+        }
+    }
+
     /// If the shared object was deleted, return deletion info for the specified version.
     fn get_deleted_shared_object_previous_tx_digest(
         &self,
@@ -451,6 +470,17 @@ pub trait ObjectCacheRead: Send + Sync {
             Some((marker_version, MarkerValue::OwnedDeleted)) if marker_version >= version => {
                 Ok(true)
             }
+            _ => Ok(false),
+        }
+    }
+
+    fn have_updated_config_in_epoch(
+        &self,
+        object_id: &ObjectID,
+        epoch_id: EpochId,
+    ) -> SuiResult<bool> {
+        match self.get_marker_value(object_id, SequenceNumber::new(), epoch_id)? {
+            Some(MarkerValue::ConfigUpdate(_)) => Ok(true),
             _ => Ok(false),
         }
     }
@@ -733,6 +763,19 @@ macro_rules! implement_storage_traits {
             ) -> StorageResult<Option<Object>> {
                 ObjectCacheRead::get_object_by_key(self, object_id, version)
                     .map_err(StorageError::custom)
+            }
+        }
+
+        impl ConfigStore for $implementor {
+            fn get_current_epoch_stable_sequence_number(
+                &self,
+                object_id: &ObjectID,
+                _epoch_id: EpochId,
+            ) -> StorageResult<Option<VersionNumber>> {
+                ObjectCacheRead::get_current_epoch_stable_sequence_number(
+                    self, object_id, _epoch_id,
+                )
+                .map_err(StorageError::custom)
             }
         }
 

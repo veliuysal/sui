@@ -138,6 +138,7 @@ impl<'backing> TemporaryStore<'backing> {
             runtime_packages_loaded_from_db: self.runtime_packages_loaded_from_db.into_inner(),
             lamport_version: self.lamport_timestamp,
             binary_config: to_binary_config(self.protocol_config),
+            mutated_config_objects: BTreeMap::new(),
         }
     }
 
@@ -376,7 +377,7 @@ impl<'backing> TemporaryStore<'backing> {
             gas_cost_summary,
             // TODO: Provide the list of read-only shared objects directly.
             shared_object_refs,
-            BTreeSet::new(),
+            BTreeMap::new(),
             *transaction_digest,
             lamport_version,
             object_changes,
@@ -1171,6 +1172,13 @@ impl<'backing> Storage for TemporaryStore<'backing> {
         _written_objects: &BTreeMap<ObjectID, Object>,
     ) -> DenyListResult {
         unreachable!("Coin denylist v2 is not supported in sui-execution v2");
+    }
+
+    fn save_accessed_config_objects(
+        &mut self,
+        _accessed_config_objects: std::collections::BTreeSet<ObjectID>,
+    ) {
+        unreachable!("Unused in v2")
     }
 }
 

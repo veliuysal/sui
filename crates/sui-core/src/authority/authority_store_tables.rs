@@ -345,6 +345,22 @@ impl AuthorityPerpetualTables {
         Ok(self.pruned_checkpoint.get(&())?.unwrap_or_default())
     }
 
+    pub fn get_current_epoch_stable_sequence_number(
+        &self,
+        object_id: &ObjectID,
+        epoch_id: EpochId,
+    ) -> SuiResult<Option<VersionNumber>> {
+        let object_key = (epoch_id, ObjectKey::min_for_id(object_id));
+        let object = self.get_object(object_id);
+        Ok(match self.object_per_epoch_marker_table.get(&object_key)? {
+            Some(MarkerValue::ConfigUpdate(seqno)) => Some(seqno),
+            Some(
+                MarkerValue::OwnedDeleted | MarkerValue::SharedDeleted(_) | MarkerValue::Received,
+            )
+            | None => object?.map(|o| o.version()),
+        })
+    }
+
     pub fn set_highest_pruned_checkpoint(
         &self,
         wb: &mut DBBatch,

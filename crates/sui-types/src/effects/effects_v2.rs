@@ -16,9 +16,9 @@ use crate::gas::GasCostSummary;
 use crate::is_system_package;
 use crate::object::{Owner, OBJECT_START_VERSION};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
-use std::collections::{BTreeMap, BTreeSet};
 
 /// The response from processing a transaction or a certified transaction
 #[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize)]
@@ -126,7 +126,8 @@ impl TransactionEffectsAPI for TransactionEffectsV2 {
                         // We can not expose the per epoch config object as input shared object,
                         // since it does not require sequencing, and hence shall not be considered
                         // as a normal input shared object.
-                        UnchangedSharedKind::PerEpochConfig => None,
+                        UnchangedSharedKind::PerEpochConfigDEPRECATED
+                        | UnchangedSharedKind::PerEpochConfigWithSeqno(_) => None,
                     }),
             )
             .collect()
@@ -411,7 +412,7 @@ impl TransactionEffectsV2 {
         executed_epoch: EpochId,
         gas_used: GasCostSummary,
         shared_objects: Vec<SharedInput>,
-        loaded_per_epoch_config_objects: BTreeSet<ObjectID>,
+        loaded_per_epoch_config_objects: BTreeMap<ObjectID, Option<SequenceNumber>>,
         transaction_digest: TransactionDigest,
         lamport_version: SequenceNumber,
         changed_objects: BTreeMap<ObjectID, EffectsObjectChange>,
@@ -445,7 +446,14 @@ impl TransactionEffectsV2 {
             .chain(
                 loaded_per_epoch_config_objects
                     .into_iter()
-                    .map(|id| (id, UnchangedSharedKind::PerEpochConfig)),
+                    .map(|(id, version_opt)| {
+                        (
+                            id,
+                            version_opt
+                                .map(UnchangedSharedKind::PerEpochConfigWithSeqno)
+                                .unwrap_or(UnchangedSharedKind::PerEpochConfigDEPRECATED),
+                        )
+                    }),
             )
             .collect();
         let changed_objects: Vec<_> = changed_objects.into_iter().collect();
@@ -608,5 +616,6 @@ pub enum UnchangedSharedKind {
     /// Shared objects in cancelled transaction. The sequence number embed cancellation reason.
     Cancelled(SequenceNumber),
     /// Read of a per-epoch config object that should remain the same during an epoch.
-    PerEpochConfig,
+    PerEpochConfigDEPRECATED,
+    PerEpochConfigWithSeqno(SequenceNumber),
 }

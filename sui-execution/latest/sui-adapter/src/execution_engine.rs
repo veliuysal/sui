@@ -9,6 +9,7 @@ mod checked {
     use crate::execution_mode::{self, ExecutionMode};
     use move_binary_format::CompiledModule;
     use move_vm_runtime::move_vm::MoveVM;
+    use std::collections::BTreeMap;
     use std::{collections::HashSet, sync::Arc};
     use sui_types::balance::{
         BALANCE_CREATE_REWARDS_FUNCTION_NAME, BALANCE_DESTROY_REBATES_FUNCTION_NAME,
@@ -262,7 +263,7 @@ mod checked {
             pt,
         )?;
         temporary_store.update_object_version_and_prev_tx();
-        Ok(temporary_store.into_inner())
+        Ok(temporary_store.into_inner(BTreeMap::new()))
     }
 
     #[instrument(name = "tx_execute", level = "debug", skip_all)]

@@ -883,10 +883,28 @@ impl AuthorityStore {
         // Add batched writes for objects and locks.
         let effects_digest = effects.digest();
 
+        // Get the already-written markers for configs this epoch.
+        let mut already_written_config_updates = self
+            .perpetual_tables
+            .object_per_epoch_marker_table
+            .multi_contains_keys(
+                markers
+                    .iter()
+                    .filter(|(_, marker_type)| matches!(marker_type, MarkerValue::ConfigUpdate(_)))
+                    .map(|(k, _)| (epoch_id, *k))
+                    .rev(),
+            )?;
+
         write_batch.insert_batch(
             &self.perpetual_tables.object_per_epoch_marker_table,
             markers
                 .iter()
+                .filter(|(_, marker_value)| {
+                    !matches!(marker_value, MarkerValue::ConfigUpdate(_))
+                        || !already_written_config_updates
+                            .pop()
+                            .expect("Information on all config updates are present by `multi_contains_keys` above")
+                })
                 .map(|(key, marker_value)| ((epoch_id, *key), *marker_value)),
         )?;
 

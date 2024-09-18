@@ -14,8 +14,8 @@ use sui_types::error::{SuiError, SuiResult};
 use sui_types::inner_temporary_store::InnerTemporaryStore;
 use sui_types::object::{Object, Owner};
 use sui_types::storage::{
-    get_module_by_id, BackingPackageStore, ChildObjectResolver, GetSharedLocks, ObjectStore,
-    PackageObject, ParentSync,
+    get_module_by_id, BackingPackageStore, ChildObjectResolver, ConfigStore, GetSharedLocks,
+    ObjectStore, PackageObject, ParentSync,
 };
 use sui_types::transaction::{InputObjectKind, InputObjects, ObjectReadResult, TransactionKey};
 
@@ -114,6 +114,18 @@ impl ObjectStore for InMemoryObjectStore {
                 None
             }
         }))
+    }
+}
+
+impl ConfigStore for InMemoryObjectStore {
+    fn get_current_epoch_stable_sequence_number(
+        &self,
+        _object_id: &ObjectID,
+        _epoch_id: EpochId,
+    ) -> Result<Option<VersionNumber>, sui_types::storage::error::Error> {
+        Err(sui_types::storage::error::Error::custom(
+            "TODO InMemoryObjectStore::get_current_epoch_stable_sequence_number is not yet supported",
+        ))
     }
 }
 

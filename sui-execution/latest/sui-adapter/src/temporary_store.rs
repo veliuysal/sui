@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use sui_protocol_config::ProtocolConfig;
 use sui_types::base_types::VersionDigest;
 use sui_types::committee::EpochId;
+use sui_types::config::is_config;
 use sui_types::deny_list_v2::check_coin_deny_list_v2_during_execution;
 use sui_types::effects::{TransactionEffects, TransactionEvents};
 use sui_types::execution::{
@@ -138,7 +139,10 @@ impl<'backing> TemporaryStore<'backing> {
     }
 
     /// Break up the structure and return its internal stores (objects, active_inputs, written, deleted)
-    pub fn into_inner(self) -> InnerTemporaryStore {
+    pub fn into_inner(
+        self,
+        mutated_config_objects: BTreeMap<ObjectID, SequenceNumber>,
+    ) -> InnerTemporaryStore {
         let results = self.execution_results;
         InnerTemporaryStore {
             input_objects: self.input_objects,
@@ -151,6 +155,7 @@ impl<'backing> TemporaryStore<'backing> {
             runtime_packages_loaded_from_db: self.runtime_packages_loaded_from_db.into_inner(),
             lamport_version: self.lamport_timestamp,
             binary_config: to_binary_config(self.protocol_config),
+            mutated_config_objects,
         }
     }
 
@@ -199,6 +204,64 @@ impl<'backing> TemporaryStore<'backing> {
             .collect()
     }
 
+    // Given the transaction effects, compute the set of config objects that have been
+    // mutated in the transaction.
+    //
+    // Additionally, compute the set of config objects that have been loaded in the current epoch.
+    //
+    // The set of loaded config objects, and mutated config objects are disjoint. All mutated
+    // config objects are transaction inputs. We additionally special-case 0x403 as a config
+    // object, for mutation and loading purposes.
+    fn compute_config_accesses(
+        &self,
+        loaded_per_epoch_config_objects: &BTreeSet<ObjectID>,
+    ) -> (
+        BTreeMap<ObjectID, Option<SequenceNumber>>,
+        BTreeMap<ObjectID, SequenceNumber>,
+    ) {
+        if !self
+            .protocol_config
+            .include_epoch_stable_sequence_number_in_effects()
+        {
+            return (
+                loaded_per_epoch_config_objects
+                    .iter()
+                    .map(|id| (*id, None))
+                    .collect(),
+                BTreeMap::new(),
+            );
+        }
+
+        let mut mutated_configs_at_version = BTreeMap::new();
+        let mut loaded_configs_at_version = BTreeMap::new();
+        for (id, obj) in self.input_objects.iter() {
+            if obj.struct_tag().is_some_and(is_config) || id == &SUI_DENY_LIST_OBJECT_ID {
+                if let Some(((seqno, _), _)) = self.mutable_input_refs.get(id) {
+                    mutated_configs_at_version.insert(*id, *seqno);
+                }
+            }
+        }
+
+        for id in loaded_per_epoch_config_objects.iter() {
+            let seqno = self
+                .store
+                .get_current_epoch_stable_sequence_number(id, self.cur_epoch)
+                .expect("Should panic on storage error")
+                .expect(
+                    "Config object already loaded during execution. Must be able to be reloaded.",
+                );
+            if let Some(other_seqno) = loaded_configs_at_version.insert(*id, Some(seqno)) {
+                unreachable!(
+                    "Loaded config object {} with sequence number {} \
+                    was already loaded with sequence number {:?} this is impossible",
+                    id, seqno, other_seqno
+                );
+            }
+        }
+
+        (loaded_configs_at_version, mutated_configs_at_version)
+    }
+
     pub fn into_effects(
         mut self,
         shared_object_refs: Vec<SharedInput>,
@@ -241,9 +304,9 @@ impl<'backing> TemporaryStore<'backing> {
         let object_changes = self.get_object_changes();
 
         let lamport_version = self.lamport_timestamp;
-        // TODO: Cleanup this clone. Potentially add unchanged_shraed_objects directly to InnerTempStore.
-        let loaded_per_epoch_config_objects = self.loaded_per_epoch_config_objects.read().clone();
-        let inner = self.into_inner();
+        let (loaded_config_objects, mutated_config_objects) =
+            self.compute_config_accesses(&self.loaded_per_epoch_config_objects.read());
+        let inner = self.into_inner(mutated_config_objects);
 
         let effects = TransactionEffects::new_from_execution_v2(
             status,
@@ -251,7 +314,7 @@ impl<'backing> TemporaryStore<'backing> {
             gas_cost_summary,
             // TODO: Provide the list of read-only shared objects directly.
             shared_object_refs,
-            loaded_per_epoch_config_objects,
+            loaded_config_objects,
             *transaction_digest,
             lamport_version,
             object_changes,
@@ -1037,6 +1100,12 @@ impl<'backing> Storage for TemporaryStore<'backing> {
                 .insert(SUI_DENY_LIST_OBJECT_ID);
         }
         result
+    }
+
+    fn save_accessed_config_objects(&mut self, accessed_config_objects: BTreeSet<ObjectID>) {
+        self.loaded_per_epoch_config_objects
+            .write()
+            .extend(accessed_config_objects);
     }
 }
 

@@ -534,6 +534,10 @@ struct FeatureFlags {
     // Validate identifier inputs separately
     #[serde(skip_serializing_if = "is_false")]
     validate_identifier_inputs: bool,
+
+    // Rethrow type layout errors during serialization instead of trying to convert them.
+    #[serde(skip_serializing_if = "is_false")]
+    include_epoch_stable_sequence_number_in_effects: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1602,6 +1606,11 @@ impl ProtocolConfig {
     }
     pub fn gc_depth(&self) -> u32 {
         self.consensus_gc_depth.unwrap_or(0)
+    }
+
+    pub fn include_epoch_stable_sequence_number_in_effects(&self) -> bool {
+        self.feature_flags
+            .include_epoch_stable_sequence_number_in_effects
     }
 }
 
@@ -2781,6 +2790,8 @@ impl ProtocolConfig {
                 60 => {
                     cfg.max_type_to_layout_nodes = Some(512);
                     cfg.feature_flags.validate_identifier_inputs = true;
+                    cfg.feature_flags
+                        .include_epoch_stable_sequence_number_in_effects = true;
                 }
                 // Use this template when making changes:
                 //

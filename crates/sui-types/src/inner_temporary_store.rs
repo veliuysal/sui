@@ -34,6 +34,8 @@ pub struct InnerTemporaryStore {
     pub binary_config: BinaryConfig,
     pub runtime_packages_loaded_from_db: BTreeMap<ObjectID, PackageObject>,
     pub lamport_version: SequenceNumber,
+    // Mapping of the mutated config objects to their new sequence numbers at the time of mutation.
+    pub mutated_config_objects: BTreeMap<ObjectID, SequenceNumber>,
 }
 
 impl InnerTemporaryStore {

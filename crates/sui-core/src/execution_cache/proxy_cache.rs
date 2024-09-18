@@ -197,6 +197,14 @@ impl ObjectCacheRead for ProxyCache {
     fn get_highest_pruned_checkpoint(&self) -> SuiResult<CheckpointSequenceNumber> {
         delegate_method!(self.get_highest_pruned_checkpoint())
     }
+
+    fn get_current_epoch_stable_sequence_number(
+        &self,
+        object_id: &ObjectID,
+        epoch_id: EpochId,
+    ) -> SuiResult<Option<sui_types::base_types::VersionNumber>> {
+        delegate_method!(self.get_current_epoch_stable_sequence_number(object_id, epoch_id))
+    }
 }
 
 impl TransactionCacheRead for ProxyCache {

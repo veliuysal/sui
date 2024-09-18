@@ -16,8 +16,8 @@ use std::sync::Arc;
 use sui_protocol_config::ProtocolVersion;
 use sui_storage::package_object_cache::PackageObjectCache;
 use sui_types::accumulator::Accumulator;
-use sui_types::base_types::VerifiedExecutionData;
 use sui_types::base_types::{EpochId, ObjectID, ObjectRef, SequenceNumber};
+use sui_types::base_types::{VerifiedExecutionData, VersionNumber};
 use sui_types::bridge::{get_bridge, Bridge};
 use sui_types::digests::{TransactionDigest, TransactionEffectsDigest, TransactionEventsDigest};
 use sui_types::effects::{TransactionEffects, TransactionEvents};
@@ -181,6 +181,17 @@ impl ObjectCacheRead for PassthroughCache {
 
     fn get_highest_pruned_checkpoint(&self) -> SuiResult<CheckpointSequenceNumber> {
         self.store.perpetual_tables.get_highest_pruned_checkpoint()
+    }
+
+    fn get_current_epoch_stable_sequence_number(
+        &self,
+        object_id: &ObjectID,
+        epoch_id: EpochId,
+    ) -> SuiResult<Option<VersionNumber>> {
+        self.store
+            .perpetual_tables
+            .get_current_epoch_stable_sequence_number(object_id, epoch_id)
+            .map_err(Into::into)
     }
 }
 

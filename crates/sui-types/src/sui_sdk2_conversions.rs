@@ -426,7 +426,7 @@ impl From<UnchangedSharedKind> for crate::effects::UnchangedSharedKind {
             UnchangedSharedKind::MutateDeleted { version } => Self::MutateDeleted(version.into()),
             UnchangedSharedKind::ReadDeleted { version } => Self::ReadDeleted(version.into()),
             UnchangedSharedKind::Cancelled { version } => Self::Cancelled(version.into()),
-            UnchangedSharedKind::PerEpochConfig => Self::PerEpochConfig,
+            UnchangedSharedKind::PerEpochConfig => Self::PerEpochConfigDEPRECATED,
         }
     }
 }
@@ -449,7 +449,11 @@ impl From<crate::effects::UnchangedSharedKind> for UnchangedSharedKind {
             crate::effects::UnchangedSharedKind::Cancelled(version) => Self::Cancelled {
                 version: version.into(),
             },
-            crate::effects::UnchangedSharedKind::PerEpochConfig => Self::PerEpochConfig,
+            crate::effects::UnchangedSharedKind::PerEpochConfigDEPRECATED => Self::PerEpochConfig,
+            // TODO[configs](tzakian): Plumb version out into the sdk2 conversions.
+            crate::effects::UnchangedSharedKind::PerEpochConfigWithSeqno(_version) => {
+                Self::PerEpochConfig
+            }
         }
     }
 }

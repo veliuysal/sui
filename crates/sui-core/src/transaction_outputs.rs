@@ -39,6 +39,7 @@ impl TransactionOutputs {
             binary_config: _,
             runtime_packages_loaded_from_db: _,
             lamport_version,
+            mutated_config_objects,
         } = inner_temporary_store;
 
         let tx_digest = *transaction.digest();
@@ -86,7 +87,21 @@ impl TransactionOutputs {
                 )
             });
 
-            received.chain(deleted).chain(shared_smears).collect()
+            // Create markers for each config update. Note that we always place it under the same
+            // object key. This way we can easily query to see if the config marker has already
+            // been updated this epoch.
+            let mutated_config_objects = mutated_config_objects.into_iter().map(|(id, version)| {
+                (
+                    ObjectKey::min_for_id(&id),
+                    MarkerValue::ConfigUpdate(version),
+                )
+            });
+
+            received
+                .chain(deleted)
+                .chain(shared_smears)
+                .chain(mutated_config_objects)
+                .collect()
         };
 
         let locks_to_delete: Vec<_> = mutable_inputs
