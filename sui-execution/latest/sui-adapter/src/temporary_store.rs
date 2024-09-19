@@ -232,32 +232,37 @@ impl<'backing> TemporaryStore<'backing> {
             );
         }
 
-        let mut mutated_configs_at_version = BTreeMap::new();
-        let mut loaded_configs_at_version = BTreeMap::new();
-        for (id, obj) in self.input_objects.iter() {
-            if obj.struct_tag().is_some_and(is_config) || id == &SUI_DENY_LIST_OBJECT_ID {
-                if let Some(((seqno, _), _)) = self.mutable_input_refs.get(id) {
-                    mutated_configs_at_version.insert(*id, *seqno);
+        let mutated_configs_at_version = self
+            .input_objects
+            .iter()
+            .filter_map(|(id, obj)| {
+                if obj.struct_tag().is_some_and(|tag| is_config(&tag))
+                    || id == &SUI_DENY_LIST_OBJECT_ID
+                {
+                    if let Some(((seqno, _), _)) = self.mutable_input_refs.get(id) {
+                        return Some((*id, *seqno));
+                    }
                 }
-            }
-        }
+                None
+            })
+            .collect();
 
-        for id in loaded_per_epoch_config_objects.iter() {
-            let seqno = self
-                .store
-                .get_current_epoch_stable_sequence_number(id, self.cur_epoch)
-                .expect("Should panic on storage error")
-                .expect(
-                    "Config object already loaded during execution. Must be able to be reloaded.",
-                );
-            if let Some(other_seqno) = loaded_configs_at_version.insert(*id, Some(seqno)) {
-                unreachable!(
-                    "Loaded config object {} with sequence number {} \
-                    was already loaded with sequence number {:?} this is impossible",
-                    id, seqno, other_seqno
-                );
-            }
-        }
+        let loaded_configs_at_version = loaded_per_epoch_config_objects
+            .iter()
+            .map(|id| {
+                // Note the `expect`s here. These are safe since:
+                // 1. We should panic on a storage error and not raise any other type of error.
+                // 2. The config (or deny list) can never be deleted, and therefore the object must always exist.
+                let seqno = self
+                    .store
+                    .get_current_epoch_stable_sequence_number(id, self.cur_epoch)
+                    .expect("Should panic on storage error")
+                    .expect(
+                        "Config object already loaded during execution. Must exist and be able to be loaded.",
+                    );
+                (*id, Some(seqno))
+            })
+            .collect();
 
         (loaded_configs_at_version, mutated_configs_at_version)
     }

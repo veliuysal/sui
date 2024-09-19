@@ -615,7 +615,9 @@ pub enum UnchangedSharedKind {
     ReadDeleted(SequenceNumber),
     /// Shared objects in cancelled transaction. The sequence number embed cancellation reason.
     Cancelled(SequenceNumber),
+    /// DEPRECATED: Use `PerEpochConfigWithSeqno` instead.
     /// Read of a per-epoch config object that should remain the same during an epoch.
     PerEpochConfigDEPRECATED,
+    /// Read of a per-epoch config and it's starting sequence number in the epoch.
     PerEpochConfigWithSeqno(SequenceNumber),
 }

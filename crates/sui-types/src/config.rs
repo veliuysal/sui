@@ -88,14 +88,14 @@ pub fn is_setting(tag: &StructTag) -> bool {
 }
 
 /// Returns true if the given `tag` is a `Config` struct.
-pub fn is_config(tag: StructTag) -> bool {
+pub fn is_config(tag: &StructTag) -> bool {
     let StructTag {
         address,
         module,
         name,
         type_params,
     } = tag;
-    address == SUI_FRAMEWORK_ADDRESS
+    *address == SUI_FRAMEWORK_ADDRESS
         && module.as_ident_str() == CONFIG_MODULE_NAME
         && name.as_ident_str() == CONFIG_STRUCT_NAME
         && type_params.len() == 1

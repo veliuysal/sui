@@ -424,7 +424,7 @@ pub trait ObjectCacheRead: Send + Sync {
 
     /// If the config object was updated, return the first sequence number it was modified at in the
     /// given epoch.
-    fn get_last_config_object_change_sequence_number(
+    fn get_config_object_change_sequence_number(
         &self,
         object_id: &ObjectID,
         epoch_id: EpochId,
@@ -479,10 +479,9 @@ pub trait ObjectCacheRead: Send + Sync {
         object_id: &ObjectID,
         epoch_id: EpochId,
     ) -> SuiResult<bool> {
-        match self.get_marker_value(object_id, SequenceNumber::new(), epoch_id)? {
-            Some(MarkerValue::ConfigUpdate(_)) => Ok(true),
-            _ => Ok(false),
-        }
+        Ok(self
+            .get_config_object_change_sequence_number(object_id, epoch_id)?
+            .is_some())
     }
 
     /// Return the watermark for the highest checkpoint for which we've pruned objects.

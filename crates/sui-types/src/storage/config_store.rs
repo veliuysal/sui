@@ -9,6 +9,8 @@ use crate::{
 use std::sync::Arc;
 
 pub trait ConfigStore {
+    /// Return the initial sequence number in the epoch for the given object_id if present in the
+    /// epoch marker table. Otherwise returns the current version of the object.
     fn get_current_epoch_stable_sequence_number(
         &self,
         object_id: &ObjectID,

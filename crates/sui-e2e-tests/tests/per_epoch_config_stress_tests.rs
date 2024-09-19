@@ -87,10 +87,10 @@ async fn run_thread<F, Fut>(
         // make sure we have the raw effects
         assert!(!raw_effects.is_empty());
 
-        let Ok(TransactionEffects::V2(v2_effects)) =
-            bcs::from_bytes::<TransactionEffects>(&raw_effects)
+        let TransactionEffects::V2(v2_effects) =
+            bcs::from_bytes::<TransactionEffects>(&raw_effects).unwrap()
         else {
-            panic!("Failed to deserialize raw effects into effects v2");
+            panic!("Expected TransactionEffects::V2 but got a different version of effects");
         };
 
         // Get the unchanged shared objecs (if any) and record their sequence numbers. The only one

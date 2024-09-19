@@ -1075,7 +1075,7 @@ impl AuthorityPerEpochStore {
                 consensus_client,
                 randomness::Handle::new_stub(),
                 authority.config.protocol_key_pair(),
-        )
+            )
             .await;
             if let Some(randomness_manager) = randomness_manager {
                 // Randomness might fail if test configuration does not permit DKG init.
