@@ -888,7 +888,7 @@ impl AuthorityStore {
         // object inputs in the transaction. Therefore there can be no other simultaneous writes to the
         // datastore for these objects.
         let (config_update_markers, all_other_markers): (Vec<_>, Vec<_>) = markers
-            .into_iter()
+            .iter()
             .partition::<Vec<&(ObjectKey, MarkerValue)>, _>(|(_, marker_value)| {
                 matches!(marker_value, MarkerValue::ConfigUpdate(_))
             });
@@ -903,7 +903,7 @@ impl AuthorityStore {
         );
         let config_update_markers_to_write = config_update_markers
             .into_iter()
-            .zip(already_written_config_updates.into_iter())
+            .zip(already_written_config_updates)
             .filter_map(|(marker_key, already_written)| {
                 if !already_written {
                     Some(marker_key)

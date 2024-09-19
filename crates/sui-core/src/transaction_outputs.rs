@@ -4,10 +4,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use sui_types::base_types::ObjectRef;
+use sui_types::config::is_config;
 use sui_types::effects::{TransactionEffects, TransactionEffectsAPI, TransactionEvents};
 use sui_types::inner_temporary_store::{InnerTemporaryStore, WrittenObjects};
 use sui_types::storage::{MarkerValue, ObjectKey};
 use sui_types::transaction::{TransactionDataAPI, VerifiedTransaction};
+use sui_types::SUI_DENY_LIST_OBJECT_ID;
 
 /// TransactionOutputs
 pub struct TransactionOutputs {
@@ -39,7 +41,6 @@ impl TransactionOutputs {
             binary_config: _,
             runtime_packages_loaded_from_db: _,
             lamport_version,
-            mutated_config_objects,
         } = inner_temporary_store;
 
         let tx_digest = *transaction.digest();
@@ -75,6 +76,28 @@ impl TransactionOutputs {
                 }
             });
 
+            // Create markers for each config update. Note that we always place it under the same
+            // object key. This way we can easily query to see if the config marker has already
+            // been updated this epoch.
+            let mutated_config_objects = input_objects
+                .iter()
+                .filter_map(|(id, obj)| {
+                    if obj.struct_tag().is_some_and(|tag| is_config(&tag))
+                        || *id == SUI_DENY_LIST_OBJECT_ID
+                    {
+                        if let Some(((seqno, _), _)) = mutable_inputs.get(id) {
+                            return Some((*id, *seqno));
+                        }
+                    }
+                    None
+                })
+                .map(|(id, version)| {
+                    (
+                        ObjectKey::min_for_id(&id),
+                        MarkerValue::ConfigUpdate(version),
+                    )
+                });
+
             // We "smear" shared deleted objects in the marker table to allow for proper sequencing
             // of transactions that are submitted after the deletion of the shared object.
             // NB: that we do _not_ smear shared objects that were taken immutably in the
@@ -84,16 +107,6 @@ impl TransactionOutputs {
                 (
                     ObjectKey(object_id, lamport_version),
                     MarkerValue::SharedDeleted(tx_digest),
-                )
-            });
-
-            // Create markers for each config update. Note that we always place it under the same
-            // object key. This way we can easily query to see if the config marker has already
-            // been updated this epoch.
-            let mutated_config_objects = mutated_config_objects.into_iter().map(|(id, version)| {
-                (
-                    ObjectKey::min_for_id(&id),
-                    MarkerValue::ConfigUpdate(version),
                 )
             });
 

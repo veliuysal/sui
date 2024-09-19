@@ -11,7 +11,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use sui_protocol_config::ProtocolConfig;
 use sui_types::base_types::VersionDigest;
 use sui_types::committee::EpochId;
-use sui_types::config::is_config;
 use sui_types::deny_list_v2::check_coin_deny_list_v2_during_execution;
 use sui_types::effects::{TransactionEffects, TransactionEvents};
 use sui_types::execution::{
@@ -141,7 +140,6 @@ impl<'backing> TemporaryStore<'backing> {
     /// Break up the structure and return its internal stores (objects, active_inputs, written, deleted)
     pub fn into_inner(
         self,
-        mutated_config_objects: BTreeMap<ObjectID, SequenceNumber>,
     ) -> InnerTemporaryStore {
         let results = self.execution_results;
         InnerTemporaryStore {
@@ -155,7 +153,6 @@ impl<'backing> TemporaryStore<'backing> {
             runtime_packages_loaded_from_db: self.runtime_packages_loaded_from_db.into_inner(),
             lamport_version: self.lamport_timestamp,
             binary_config: to_binary_config(self.protocol_config),
-            mutated_config_objects,
         }
     }
 
@@ -204,50 +201,23 @@ impl<'backing> TemporaryStore<'backing> {
             .collect()
     }
 
-    // Given the transaction effects, compute the set of config objects that have been
-    // mutated in the transaction.
-    //
-    // Additionally, compute the set of config objects that have been loaded in the current epoch.
-    //
-    // The set of loaded config objects, and mutated config objects are disjoint. All mutated
-    // config objects are transaction inputs. We additionally special-case 0x403 as a config
-    // object, for mutation and loading purposes.
+    // Compute the set of config objects and their epoch-stable sequence numbers that have been
+    // accessed in the transaction. 
     fn compute_config_accesses(
         &self,
         loaded_per_epoch_config_objects: &BTreeSet<ObjectID>,
-    ) -> (
-        BTreeMap<ObjectID, Option<SequenceNumber>>,
-        BTreeMap<ObjectID, SequenceNumber>,
-    ) {
+    ) -> BTreeMap<ObjectID, Option<SequenceNumber>> {
         if !self
             .protocol_config
             .include_epoch_stable_sequence_number_in_effects()
         {
-            return (
-                loaded_per_epoch_config_objects
-                    .iter()
-                    .map(|id| (*id, None))
-                    .collect(),
-                BTreeMap::new(),
-            );
+            return loaded_per_epoch_config_objects
+                .iter()
+                .map(|id| (*id, None))
+                .collect();
         }
 
-        let mutated_configs_at_version = self
-            .input_objects
-            .iter()
-            .filter_map(|(id, obj)| {
-                if obj.struct_tag().is_some_and(|tag| is_config(&tag))
-                    || id == &SUI_DENY_LIST_OBJECT_ID
-                {
-                    if let Some(((seqno, _), _)) = self.mutable_input_refs.get(id) {
-                        return Some((*id, *seqno));
-                    }
-                }
-                None
-            })
-            .collect();
-
-        let loaded_configs_at_version = loaded_per_epoch_config_objects
+        loaded_per_epoch_config_objects
             .iter()
             .map(|id| {
                 // Note the `expect`s here. These are safe since:
@@ -262,9 +232,7 @@ impl<'backing> TemporaryStore<'backing> {
                     );
                 (*id, Some(seqno))
             })
-            .collect();
-
-        (loaded_configs_at_version, mutated_configs_at_version)
+            .collect()
     }
 
     pub fn into_effects(
@@ -309,9 +277,9 @@ impl<'backing> TemporaryStore<'backing> {
         let object_changes = self.get_object_changes();
 
         let lamport_version = self.lamport_timestamp;
-        let (loaded_config_objects, mutated_config_objects) =
+        let loaded_config_objects =
             self.compute_config_accesses(&self.loaded_per_epoch_config_objects.read());
-        let inner = self.into_inner(mutated_config_objects);
+        let inner = self.into_inner();
 
         let effects = TransactionEffects::new_from_execution_v2(
             status,

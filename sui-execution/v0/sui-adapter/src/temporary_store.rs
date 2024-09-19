@@ -156,7 +156,6 @@ impl<'backing> TemporaryStore<'backing> {
             runtime_packages_loaded_from_db: self.runtime_packages_loaded_from_db.into_inner(),
             lamport_version: self.lamport_timestamp,
             binary_config: to_binary_config(&self.protocol_config),
-            mutated_config_objects: BTreeMap::new(),
         }
     }
 
