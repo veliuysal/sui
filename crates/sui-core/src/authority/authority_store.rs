@@ -904,13 +904,8 @@ impl AuthorityStore {
         let config_update_markers_to_write = config_update_markers
             .into_iter()
             .zip(already_written_config_updates)
-            .filter_map(|(marker_key, already_written)| {
-                if !already_written {
-                    Some(marker_key)
-                } else {
-                    None
-                }
-            });
+            .filter(|(_, already_written)| !*already_written)
+            .map(|(marker_key, _)| marker_key);
 
         write_batch.insert_batch(
             &self.perpetual_tables.object_per_epoch_marker_table,

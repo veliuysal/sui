@@ -138,9 +138,7 @@ impl<'backing> TemporaryStore<'backing> {
     }
 
     /// Break up the structure and return its internal stores (objects, active_inputs, written, deleted)
-    pub fn into_inner(
-        self,
-    ) -> InnerTemporaryStore {
+    pub fn into_inner(self) -> InnerTemporaryStore {
         let results = self.execution_results;
         InnerTemporaryStore {
             input_objects: self.input_objects,
@@ -202,8 +200,8 @@ impl<'backing> TemporaryStore<'backing> {
     }
 
     // Compute the set of config objects and their epoch-stable sequence numbers that have been
-    // accessed in the transaction. 
-    fn compute_config_accesses(
+    // accessed in the transaction.
+    fn compute_unsequenced_config_accesses(
         &self,
         loaded_per_epoch_config_objects: &BTreeSet<ObjectID>,
     ) -> BTreeMap<ObjectID, Option<SequenceNumber>> {
@@ -277,8 +275,8 @@ impl<'backing> TemporaryStore<'backing> {
         let object_changes = self.get_object_changes();
 
         let lamport_version = self.lamport_timestamp;
-        let loaded_config_objects =
-            self.compute_config_accesses(&self.loaded_per_epoch_config_objects.read());
+        let unsequenced_loaded_config_objects =
+            self.compute_unsequenced_config_accesses(&self.loaded_per_epoch_config_objects.read());
         let inner = self.into_inner();
 
         let effects = TransactionEffects::new_from_execution_v2(
@@ -287,7 +285,7 @@ impl<'backing> TemporaryStore<'backing> {
             gas_cost_summary,
             // TODO: Provide the list of read-only shared objects directly.
             shared_object_refs,
-            loaded_config_objects,
+            unsequenced_loaded_config_objects,
             *transaction_digest,
             lamport_version,
             object_changes,
@@ -1075,7 +1073,7 @@ impl<'backing> Storage for TemporaryStore<'backing> {
         result
     }
 
-    fn save_accessed_config_objects(&mut self, accessed_config_objects: BTreeSet<ObjectID>) {
+    fn save_unsequenced_config_accesses(&mut self, accessed_config_objects: BTreeSet<ObjectID>) {
         self.loaded_per_epoch_config_objects
             .write()
             .extend(accessed_config_objects);

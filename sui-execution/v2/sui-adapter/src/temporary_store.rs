@@ -1173,7 +1173,7 @@ impl<'backing> Storage for TemporaryStore<'backing> {
         unreachable!("Coin denylist v2 is not supported in sui-execution v2");
     }
 
-    fn save_accessed_config_objects(
+    fn save_unsequenced_config_accesses(
         &mut self,
         _accessed_config_objects: std::collections::BTreeSet<ObjectID>,
     ) {

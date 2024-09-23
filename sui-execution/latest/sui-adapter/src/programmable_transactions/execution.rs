@@ -109,7 +109,8 @@ mod checked {
         // for expensive invariant checks
         let wrapped_object_containers = object_runtime.wrapped_object_containers();
 
-        // We record the config objects that we have accessed in this transaction.
+        // We record the config objects that we have accessed in this transaction through the
+        // unsequenced read API.
         let accessed_config_objects = object_runtime.accessed_configs();
 
         // apply changes
@@ -117,7 +118,7 @@ mod checked {
         // Save loaded objects for debug. We dont want to lose the info
         state_view.save_loaded_runtime_objects(loaded_runtime_objects);
         state_view.save_wrapped_object_containers(wrapped_object_containers);
-        state_view.save_accessed_config_objects(accessed_config_objects);
+        state_view.save_unsequenced_config_accesses(accessed_config_objects);
         state_view.record_execution_results(finished?);
         Ok(mode_results)
     }

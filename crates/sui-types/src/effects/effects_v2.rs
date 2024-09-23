@@ -412,7 +412,9 @@ impl TransactionEffectsV2 {
         executed_epoch: EpochId,
         gas_used: GasCostSummary,
         shared_objects: Vec<SharedInput>,
-        loaded_per_epoch_config_objects: BTreeMap<ObjectID, Option<SequenceNumber>>,
+        // Note that either all sequence numbers are `Some` or all are `None`. Determined by the
+        // `include_epoch_stable_sequence_number_in_effects` flag in the protocol config.
+        unsequenced_per_epoch_config_objects: BTreeMap<ObjectID, Option<SequenceNumber>>,
         transaction_digest: TransactionDigest,
         lamport_version: SequenceNumber,
         changed_objects: BTreeMap<ObjectID, EffectsObjectChange>,
@@ -420,6 +422,15 @@ impl TransactionEffectsV2 {
         events_digest: Option<TransactionEventsDigest>,
         dependencies: Vec<TransactionDigest>,
     ) -> Self {
+        // All sequence numbers in `unsequenced_per_epoch_config_objects` are all `Some` or all `None`
+        debug_assert!(
+            unsequenced_per_epoch_config_objects
+                .iter()
+                .all(|(_, v)| v.is_some())
+                || unsequenced_per_epoch_config_objects
+                    .iter()
+                    .all(|(_, v)| v.is_none())
+        );
         let unchanged_shared_objects = shared_objects
             .into_iter()
             .filter_map(|shared_input| match shared_input {
@@ -444,7 +455,7 @@ impl TransactionEffectsV2 {
                 }
             })
             .chain(
-                loaded_per_epoch_config_objects
+                unsequenced_per_epoch_config_objects
                     .into_iter()
                     .map(|(id, version_opt)| {
                         (

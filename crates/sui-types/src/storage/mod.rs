@@ -219,7 +219,7 @@ pub trait Storage {
         wrapped_object_containers: BTreeMap<ObjectID, ObjectID>,
     );
 
-    fn save_accessed_config_objects(&mut self, accessed_config_objects: BTreeSet<ObjectID>);
+    fn save_unsequenced_config_accesses(&mut self, accessed_config_objects: BTreeSet<ObjectID>);
 
     /// Check coin denylist during execution,
     /// and the number of non-gas-coin owners.
