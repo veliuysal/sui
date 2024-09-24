@@ -12894,6 +12894,8 @@ dependencies = [
  "serde_with 3.9.0",
  "shared-crypto",
  "sui-authority-aggregation",
+ "sui-bridge",
+ "sui-bridge-test-utils",
  "sui-config",
  "sui-json-rpc-api",
  "sui-json-rpc-types",
@@ -12958,8 +12960,10 @@ dependencies = [
  "serde",
  "serde_yaml 0.8.26",
  "sui-bridge",
+ "sui-bridge-test-utils",
  "sui-config",
  "sui-data-ingestion-core",
+ "sui-indexer",
  "sui-indexer-builder",
  "sui-json-rpc-types",
  "sui-sdk 1.35.0",
@@ -12967,6 +12971,28 @@ dependencies = [
  "sui-types",
  "tap",
  "telemetry-subscribers",
+ "tempfile",
+ "test-cluster",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sui-bridge-test-utils"
+version = "1.35.0"
+dependencies = [
+ "anyhow",
+ "ethers",
+ "move-core-types",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "sui-bridge",
+ "sui-config",
+ "sui-json-rpc-types",
+ "sui-sdk 1.35.0",
+ "sui-test-transaction-builder",
+ "sui-types",
  "tempfile",
  "test-cluster",
  "tokio",
