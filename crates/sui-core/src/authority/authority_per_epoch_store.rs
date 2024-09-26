@@ -1867,20 +1867,25 @@ impl AuthorityPerEpochStore {
             .pending_consensus_transactions
             .multi_insert(key_value_pairs)?;
 
-        // TODO: lock once for all insert() calls.
-        for transaction in transactions {
-            if let ConsensusTransactionKind::CertifiedTransaction(cert) = &transaction.kind {
-                let state = lock.expect("Must pass reconfiguration lock when storing certificate");
-                // Caller is responsible for performing graceful check
-                assert!(
-                    state.should_accept_user_certs(),
-                    "Reconfiguration state should allow accepting user transactions"
-                );
-                self.pending_consensus_certificates
-                    .write()
-                    .insert(*cert.digest());
-            }
+        let digests: Vec<_> = transactions
+            .iter()
+            .filter_map(|tx| match &tx.kind {
+                ConsensusTransactionKind::CertifiedTransaction(cert) => Some(cert.digest()),
+                ConsensusTransactionKind::UserTransaction(txn) => Some(txn.digest()),
+                _ => None,
+            })
+            .collect();
+        if !digests.is_empty() {
+            let state = lock.expect("Must pass reconfiguration lock when storing certificate");
+            // Caller is responsible for performing graceful check
+            assert!(
+                state.should_accept_user_certs(),
+                "Reconfiguration state should allow accepting user transactions"
+            );
+            let mut pending_consensus_certificates = self.pending_consensus_certificates.write();
+            pending_consensus_certificates.extend(digests);
         }
+
         Ok(())
     }
 
@@ -2757,7 +2762,7 @@ impl AuthorityPerEpochStore {
             .collect();
 
         let (
-            transactions_to_schedule,
+            verified_transactions,
             notifications,
             lock,
             final_round,
@@ -2779,10 +2784,7 @@ impl AuthorityPerEpochStore {
                 authority_metrics,
             )
             .await?;
-        self.finish_consensus_certificate_process_with_batch(
-            &mut output,
-            &transactions_to_schedule,
-        )?;
+        self.finish_consensus_certificate_process_with_batch(&mut output, &verified_transactions)?;
         output.record_consensus_commit_stats(consensus_stats.clone());
 
         // Create pending checkpoints if we are still accepting tx.
@@ -2890,7 +2892,7 @@ impl AuthorityPerEpochStore {
             self.record_end_of_message_quorum_time_metric();
         }
 
-        Ok(transactions_to_schedule)
+        Ok(verified_transactions)
     }
 
     // Adds the consensus commit prologue transaction to the beginning of input `transactions` to update
@@ -3682,7 +3684,7 @@ impl AuthorityPerEpochStore {
                 kind: ConsensusTransactionKind::UserTransaction(_tx),
                 ..
             }) => {
-                // TODO: implement handling of unsigned user transactions.
+                // TODO(fastpath): implement handling of consensus finalized user transactions.
                 Ok(ConsensusCertificateResult::Ignored)
             }
             SequencedConsensusTransactionKind::System(system_transaction) => {

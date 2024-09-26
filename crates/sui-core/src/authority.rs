@@ -278,7 +278,7 @@ pub struct AuthorityMetrics {
     post_processing_total_tx_had_event_processed: IntCounter,
     post_processing_total_failures: IntCounter,
 
-    /// Consensus handler metrics
+    /// Consensus commit and transaction handler metrics
     pub consensus_handler_processed: IntCounterVec,
     pub consensus_handler_transaction_sizes: HistogramVec,
     pub consensus_handler_num_low_scoring_authorities: IntGauge,
@@ -292,6 +292,8 @@ pub struct AuthorityMetrics {
     pub consensus_committed_user_transactions: IntGaugeVec,
     pub consensus_calculated_throughput: IntGauge,
     pub consensus_calculated_throughput_profile: IntGauge,
+    pub consensus_transaction_handler_processed: IntCounterVec,
+    pub consensus_transaction_handler_fastpath_executions: IntCounter,
 
     pub limits_metrics: Arc<LimitsMetrics>,
 
@@ -758,6 +760,17 @@ impl AuthorityMetrics {
                 "consensus_calculated_throughput_profile",
                 "The current active calculated throughput profile",
                 registry
+            ).unwrap(),
+            consensus_transaction_handler_processed: register_int_counter_vec_with_registry!(
+                "consensus_transaction_handler_processed",
+                "Number of transactions processed by consensus transaction handler, by whether they are certified or rejected.",
+                &["outcome"],
+                registry
+            ).unwrap(),
+            consensus_transaction_handler_fastpath_executions: register_int_counter_with_registry!(
+                "consensus_transaction_handler_fastpath_executions",
+                "Number of fastpath transactions sent for execution by consensus transaction handler",
+                registry,
             ).unwrap(),
             execution_queueing_latency: LatencyObserver::new(),
             txn_ready_rate_tracker: Arc::new(Mutex::new(RateTracker::new(Duration::from_secs(10)))),
