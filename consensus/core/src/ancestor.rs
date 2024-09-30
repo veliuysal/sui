@@ -37,12 +37,12 @@ pub(crate) struct AncestorStateManager {
 
 impl AncestorStateManager {
     #[cfg(not(test))]
-    const STATE_LOCK_DURATION: Duration = Duration::from_secs(30);
+    const STATE_LOCK_DURATION: Duration = Duration::from_secs(60);
     #[cfg(test)]
     const STATE_LOCK_DURATION: Duration = Duration::from_secs(5);
 
     const NETWORK_QUORUM_ROUND_LAG_THRESHOLD: u32 = 0;
-    pub(crate) const EXCLUSION_THRESHOLD_PERCENTAGE: u64 = 10;
+    pub(crate) const EXCLUSION_THRESHOLD_PERCENTAGE: u64 = 5;
 
     pub(crate) fn new(context: Arc<Context>, propagation_scores: ReputationScores) -> Self {
         let mut state_map = HashMap::new();
