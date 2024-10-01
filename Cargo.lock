@@ -13667,7 +13667,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tokio-util 0.7.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-util 0.7.10",
  "toml 0.7.4",
  "tracing",
  "url",
