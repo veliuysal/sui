@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use sui_json_rpc_types::SuiTransactionBlockResponse;
 
-use crate::config::{IngestionConfig, PruningOptions, SnapshotLagConfig, UploadOptions};
+use crate::config::{IngestionConfig, RetentionPolicies, SnapshotLagConfig, UploadOptions};
 use crate::database::Connection;
 use crate::database::ConnectionPool;
 use crate::db::ConnectionPoolConfig;
@@ -67,11 +67,11 @@ pub async fn start_indexer_jsonrpc_for_testing(
 }
 
 /// Wrapper over `Indexer::start_writer_with_config` to make it easier to configure an indexer
-/// writer for testing.
+/// writer for testing. `
 pub async fn start_indexer_writer_for_testing(
     db_url: String,
     snapshot_config: Option<SnapshotLagConfig>,
-    pruning_options: Option<PruningOptions>,
+    retention_policies: Option<RetentionPolicies>,
     data_ingestion_path: Option<PathBuf>,
     cancel: Option<CancellationToken>,
 ) -> (
@@ -81,7 +81,6 @@ pub async fn start_indexer_writer_for_testing(
 ) {
     let token = cancel.unwrap_or_else(CancellationToken::new);
     let snapshot_config = snapshot_config.unwrap_or_default();
-    let pruning_options = pruning_options.unwrap_or_default();
 
     // Reduce the connection pool size to 10 for testing to prevent maxing out
     let pool_config = ConnectionPoolConfig {
@@ -124,7 +123,7 @@ pub async fn start_indexer_writer_for_testing(
                 store_clone,
                 indexer_metrics,
                 snapshot_config,
-                pruning_options,
+                retention_policies,
                 token_clone,
             )
             .await
