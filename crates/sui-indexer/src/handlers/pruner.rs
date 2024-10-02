@@ -125,7 +125,7 @@ impl Pruner {
                 .collect();
 
             for watermark in watermarks.iter() {
-                tokio::time::sleep(Duration::from_secs(watermark.prune_delay(1000))).await;
+                tokio::time::sleep(Duration::from_millis(watermark.prune_delay(1000))).await;
 
                 // Prune as an epoch-partitioned table
                 if table_partitions.get(watermark.entity.as_ref()).is_some() {
