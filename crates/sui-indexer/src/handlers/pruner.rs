@@ -3,9 +3,11 @@
 
 use crate::config::RetentionPolicies;
 use crate::errors::IndexerError;
+use crate::models::watermarks::StoredWatermark;
 use crate::store::pg_partition_manager::PgPartitionManager;
 use crate::store::PgIndexerStore;
 use crate::{metrics::IndexerMetrics, store::IndexerStore, types::IndexerResult};
+use mysten_metrics::spawn_monitored_task;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -108,6 +110,15 @@ impl Pruner {
     }
 
     pub async fn start(&self, cancel: CancellationToken) -> IndexerResult<()> {
+        let store_clone = self.store.clone();
+        let retention_policies = self.retention_policies.policies.clone();
+        let cancel_clone = cancel.clone();
+        spawn_monitored_task!(update_watermarks_lower_bounds_task(
+            store_clone,
+            retention_policies,
+            cancel_clone
+        ));
+
         let mut last_seen_max_epoch = 0;
         // The first epoch that has not yet been pruned.
         let mut next_prune_epoch = None;
@@ -184,4 +195,74 @@ impl Pruner {
         info!("Pruner task cancelled.");
         Ok(())
     }
+}
+
+/// Task to periodically query the `watermarks` table and update the lower bounds for all watermarks
+/// if the entry exceeds epoch-level retention policy.
+async fn update_watermarks_lower_bounds_task(
+    store: PgIndexerStore,
+    retention_policies: HashMap<PrunableTable, u64>,
+    cancel: CancellationToken,
+) -> IndexerResult<()> {
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                info!("Pruner watermark lower bound update task cancelled.");
+                return Ok(());
+            }
+            _ = interval.tick() => {
+                update_watermarks_lower_bounds(&store, &retention_policies, &cancel).await?;
+            }
+        }
+    }
+}
+
+/// Fetches all entries from the `watermarks` table, and updates the lower bounds for all watermarks
+/// if the entry's epoch range exceeds the respective retention policy.
+async fn update_watermarks_lower_bounds(
+    store: &PgIndexerStore,
+    retention_policies: &HashMap<PrunableTable, u64>,
+    cancel: &CancellationToken,
+) -> IndexerResult<()> {
+    let watermarks = store.get_watermarks().await?;
+    let mut lower_bound_updates = vec![];
+
+    for watermark in watermarks.iter() {
+        if cancel.is_cancelled() {
+            info!("Pruner watermark lower bound update task cancelled.");
+            return Ok(());
+        }
+
+        let Some(epochs_to_keep) = retention_policies.get(&watermark.entity) else {
+            continue;
+        };
+
+        if watermark.epoch_lo + epochs_to_keep <= watermark.epoch_hi {
+            let new_inclusive_epoch_lower_bound =
+                watermark.epoch_hi.saturating_sub(epochs_to_keep - 1);
+
+            // TODO: (wlmyng) now that epochs table is not pruned, we can add `first_tx_seq_num` or
+            // something and use it as a lookup table.
+            let (min_cp, _) = store
+                .get_checkpoint_range_for_epoch(new_inclusive_epoch_lower_bound)
+                .await?;
+            let (min_tx, _) = store.get_transaction_range_for_checkpoint(min_cp).await?;
+
+            lower_bound_updates.push(StoredWatermark::from_lower_bound_update(
+                watermark.entity.as_ref(),
+                new_inclusive_epoch_lower_bound,
+                watermark.entity.map_to_reader_unit(min_cp, min_tx),
+            ))
+        }
+    }
+
+    if !lower_bound_updates.is_empty() {
+        store
+            .update_watermarks_lower_bound(lower_bound_updates)
+            .await?;
+        info!("Finished updating lower bounds for watermarks");
+    }
+
+    Ok(())
 }

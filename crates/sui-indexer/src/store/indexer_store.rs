@@ -12,6 +12,7 @@ use crate::models::display::StoredDisplay;
 use crate::models::obj_indices::StoredObjectVersion;
 use crate::models::objects::{StoredDeletedObject, StoredObject};
 use crate::models::raw_checkpoints::StoredRawCheckpoint;
+use crate::models::watermarks::{StoredWatermark, WatermarkRead};
 use crate::types::{
     EventIndex, IndexedCheckpoint, IndexedEvent, IndexedPackage, IndexedTransaction, TxIndex,
 };
@@ -123,4 +124,13 @@ pub trait IndexerStore: Clone + Sync + Send + 'static {
         cp: u64,
         tx: u64,
     ) -> Result<(), IndexerError>;
+
+    async fn update_watermarks_lower_bound(
+        &self,
+        watermarks: Vec<StoredWatermark>,
+    ) -> Result<(), IndexerError>;
+
+    /// Load watermarks from the store. Watermarks that are not recognized by `PrunableTable` are
+    /// filtered out.
+    async fn get_watermarks(&self) -> Result<Vec<WatermarkRead>, IndexerError>;
 }
