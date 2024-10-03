@@ -191,12 +191,12 @@ impl<C> ConsensusHandler<C> {
 
 impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
     #[instrument(level = "debug", skip_all)]
-    async fn handle_consensus_commit(&mut self, consensus_output: impl ConsensusCommitAPI) {
+    async fn handle_consensus_commit(&mut self, consensus_commit: impl ConsensusCommitAPI) {
         let _scope = monitored_scope("HandleConsensusOutput");
 
         let last_committed_round = self.last_consensus_stats.index.last_committed_round;
 
-        let round = consensus_output.leader_round();
+        let round = consensus_commit.leader_round();
 
         // TODO: Remove this once narwhal is deprecated. For now mysticeti will not return
         // more than one leader per round so we are not in danger of ignoring any commits.
@@ -212,11 +212,11 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
             return;
         }
 
-        /* (serialized, transaction, output_cert) */
+        /* (transaction, serialized length) */
         let mut transactions = vec![];
-        let timestamp = consensus_output.commit_timestamp_ms();
-        let leader_author = consensus_output.leader_author_index();
-        let commit_sub_dag_index = consensus_output.commit_sub_dag_index();
+        let timestamp = consensus_commit.commit_timestamp_ms();
+        let leader_author = consensus_commit.leader_author_index();
+        let commit_sub_dag_index = consensus_commit.commit_sub_dag_index();
 
         let epoch_start = self
             .epoch_store
@@ -232,7 +232,7 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
         };
 
         info!(
-            %consensus_output,
+            %consensus_commit,
             epoch = ?self.epoch_store.epoch(),
             "Received consensus output"
         );
@@ -282,7 +282,7 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
             self.low_scoring_authorities.clone(),
             self.epoch_store.committee(),
             &self.committee,
-            consensus_output.reputation_score_sorted_desc(),
+            consensus_commit.reputation_score_sorted_desc(),
             &self.metrics,
             self.epoch_store
                 .protocol_config()
@@ -297,7 +297,7 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
         {
             let span = trace_span!("process_consensus_certs");
             let _guard = span.enter();
-            for (authority_index, parsed_transactions) in consensus_output.transactions() {
+            for (authority_index, parsed_transactions) in consensus_commit.transactions() {
                 // TODO: consider only messages within 1~3 rounds of the leader?
                 self.last_consensus_stats
                     .stats
@@ -317,6 +317,7 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
                         .consensus_handler_transaction_sizes
                         .with_label_values(&[kind])
                         .observe(parsed.serialized_len as f64);
+                    // UserTransaction exists only when mysticeti_fastpath is enabled in protocol config.
                     if matches!(
                         &parsed.transaction.kind,
                         ConsensusTransactionKind::CertifiedTransaction(_)
@@ -412,7 +413,7 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
                 &self.last_consensus_stats,
                 &self.checkpoint_service,
                 self.cache_reader.as_ref(),
-                &ConsensusCommitInfo::new(self.epoch_store.protocol_config(), &consensus_output),
+                &ConsensusCommitInfo::new(self.epoch_store.protocol_config(), &consensus_commit),
                 &self.metrics,
             )
             .await
@@ -486,20 +487,19 @@ impl MysticetiConsensusHandler {
         let mut tasks = JoinSet::new();
         tasks.spawn(monitored_future!(async move {
             // TODO: pause when execution is overloaded, so consensus can detect the backpressure.
-            while let Some(consensus_output) = commit_receiver.recv().await {
-                let commit_index = consensus_output.commit_ref.index;
+            while let Some(consensus_commit) = commit_receiver.recv().await {
+                let commit_index = consensus_commit.commit_ref.index;
                 consensus_handler
-                    .handle_consensus_commit(consensus_output)
+                    .handle_consensus_commit(consensus_commit)
                     .await;
                 commit_consumer_monitor.set_highest_handled_commit(commit_index);
             }
         }));
         if consensus_transaction_handler.enabled() {
             tasks.spawn(monitored_future!(async move {
-                while let Some(blocks_with_rejected_transactions) =
-                    transaction_receiver.recv().await
+                while let Some(blocks_and_rejected_transactions) = transaction_receiver.recv().await
                 {
-                    let parsed_transactions = blocks_with_rejected_transactions
+                    let parsed_transactions = blocks_and_rejected_transactions
                         .into_iter()
                         .flat_map(|(block, rejected_transactions)| {
                             parse_block_transactions(&block, &rejected_transactions)
@@ -778,11 +778,11 @@ pub struct ConsensusCommitInfo {
 }
 
 impl ConsensusCommitInfo {
-    fn new(protocol_config: &ProtocolConfig, consensus_output: &impl ConsensusCommitAPI) -> Self {
+    fn new(protocol_config: &ProtocolConfig, consensus_commit: &impl ConsensusCommitAPI) -> Self {
         Self {
-            round: consensus_output.leader_round(),
-            timestamp: consensus_output.commit_timestamp_ms(),
-            consensus_commit_digest: consensus_output.consensus_digest(protocol_config),
+            round: consensus_commit.leader_round(),
+            timestamp: consensus_commit.commit_timestamp_ms(),
+            consensus_commit_digest: consensus_commit.consensus_digest(protocol_config),
 
             #[cfg(any(test, feature = "test-utils"))]
             skip_consensus_commit_prologue_in_test: false,
