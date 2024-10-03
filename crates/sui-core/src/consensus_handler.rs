@@ -192,7 +192,7 @@ impl<C> ConsensusHandler<C> {
 impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
     #[instrument(level = "debug", skip_all)]
     async fn handle_consensus_commit(&mut self, consensus_output: impl ConsensusCommitAPI) {
-        let _scope = monitored_scope("HandleConsensusOutput");
+        let _scope = monitored_scope("ConsensusHandler::HandleCommit");
 
         let last_committed_round = self.last_consensus_stats.index.last_committed_round;
 
@@ -295,7 +295,7 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
             .inc();
 
         {
-            let span = trace_span!("process_consensus_certs");
+            let span = trace_span!("ConsensusHandler::HandleCommit::process_consensus_txns");
             let _guard = span.enter();
             for (authority_index, parsed_transactions) in consensus_output.transactions() {
                 // TODO: consider only messages within 1~3 rounds of the leader?
