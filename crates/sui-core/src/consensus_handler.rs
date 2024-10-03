@@ -912,13 +912,10 @@ impl ConsensusTransactionHandler {
                             return None;
                         }
                         pending_consensus_transactions.push(parsed.transaction.clone());
-                        let tx = VerifiedTransaction::new_from_verified(*tx.clone());
+                        let tx = VerifiedTransaction::new_unchecked(*tx.clone());
                         Some(VerifiedExecutableTransaction::new_from_consensus(
                             tx,
                             self.epoch_store.epoch(),
-                            parsed.round,
-                            parsed.authority,
-                            parsed.transaction_index,
                         ))
                     }
                     _ => None,

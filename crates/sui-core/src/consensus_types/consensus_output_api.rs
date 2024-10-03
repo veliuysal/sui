@@ -17,10 +17,13 @@ pub(crate) struct ParsedTransaction {
     // Bytes length of the serialized transaction
     pub(crate) serialized_len: usize,
     // Consensus round of the block containing the transaction.
+    #[allow(unused)]
     pub(crate) round: Round,
     // Authority index of the block containing the transaction.
+    #[allow(unused)]
     pub(crate) authority: AuthorityIndex,
     // Transaction index in the block.
+    #[allow(unused)]
     pub(crate) transaction_index: TransactionIndex,
 }
 

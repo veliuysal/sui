@@ -3597,11 +3597,26 @@ impl AuthorityPerEpochStore {
             }
 
             SequencedConsensusTransactionKind::External(ConsensusTransaction {
-                kind: ConsensusTransactionKind::UserTransaction(_tx),
+                kind: ConsensusTransactionKind::UserTransaction(tx),
                 ..
             }) => {
-                // TODO(fastpath): implement handling of consensus finalized user transactions.
-                Ok(ConsensusCertificateResult::Ignored)
+                // Safe because transactions are certified by consensus.
+                let tx = VerifiedTransaction::new_unchecked(*tx.clone());
+                // TODO(fastpath): accept position in consensus, after plumbing consensus round, authority index, and transaction index here.
+                let transaction =
+                    VerifiedExecutableTransaction::new_from_consensus(tx, self.epoch());
+
+                self.process_consensus_user_transaction(
+                    transaction,
+                    certificate_author,
+                    commit_round,
+                    tracking_id,
+                    previously_deferred_tx_digests,
+                    dkg_failed,
+                    generating_randomness,
+                    shared_object_congestion_tracker,
+                    authority_metrics,
+                )
             }
             SequencedConsensusTransactionKind::System(system_transaction) => {
                 Ok(self.process_consensus_system_transaction(system_transaction))
