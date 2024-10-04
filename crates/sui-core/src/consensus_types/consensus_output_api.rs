@@ -77,10 +77,10 @@ impl ConsensusCommitAPI for consensus_core::CommittedSubDag {
         self.blocks
             .iter()
             .zip(self.rejected_transactions.iter())
-            .map(|(b, r)| {
+            .map(|(block, rejected_transactions)| {
                 (
-                    b.author().value() as AuthorityIndex,
-                    parse_block_transactions(b, r),
+                    block.author().value() as AuthorityIndex,
+                    parse_block_transactions(block, rejected_transactions),
                 )
             })
             .collect()
@@ -113,13 +113,13 @@ pub(crate) fn parse_block_transactions(
             let transaction = match bcs::from_bytes::<ConsensusTransaction>(tx.data()) {
                 Ok(transaction) => transaction,
                 Err(err) => {
-                    panic!("Failed to deserialize sequenced consensus transaction(this should not happen) {} from {authority} at {round}", err);
+                    panic!("Failed to deserialize sequenced consensus transaction(this should not happen) {err} from {authority} at {round}");
                 },
             };
             let rejected = if rejected_i < rejected_transactions.len() {
                 match rejected_transactions[rejected_i].cmp(&(index as TransactionIndex)) {
                     Ordering::Less => {
-                        panic!("Rejected transaction indices are not in order. Block {:?}, rejected transactions: {:?}", block, rejected_transactions);
+                        panic!("Rejected transaction indices are not in order. Block {block:?}, rejected transactions: {rejected_transactions:?}");
                     },
                     Ordering::Equal => {
                         rejected_i += 1;

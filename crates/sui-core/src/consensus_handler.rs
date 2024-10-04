@@ -321,9 +321,7 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
                     if matches!(
                         &parsed.transaction.kind,
                         ConsensusTransactionKind::CertifiedTransaction(_)
-                    ) || matches!(
-                        &parsed.transaction.kind,
-                        ConsensusTransactionKind::UserTransaction(_)
+                            | ConsensusTransactionKind::UserTransaction(_)
                     ) {
                         self.last_consensus_stats
                             .stats
@@ -908,6 +906,7 @@ impl ConsensusTransactionHandler {
                     .inc();
                 match &parsed.transaction.kind {
                     ConsensusTransactionKind::UserTransaction(tx) => {
+                        // TODO(fastpath): use a separate function to check if a transaction should be executed in fastpath.
                         if tx.contains_shared_object() {
                             return None;
                         }

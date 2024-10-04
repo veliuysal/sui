@@ -1209,6 +1209,7 @@ impl AuthorityState {
 
         self.metrics.total_cert_attempts.inc();
 
+        // TODO(fastpath): use a separate function to check if a transaction should be executed in fastpath.
         if !certificate.contains_shared_object() {
             // Shared object transactions need to be sequenced by the consensus before enqueueing
             // for execution, done in AuthorityPerEpochStore::handle_consensus_transaction().
